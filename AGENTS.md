@@ -58,7 +58,7 @@ pub fn Stream::finished_by_peer(&self) -> bool                            // the
 pub const LINK_PROTOCOL: &str = "link/1";
 pub fn instance() -> &'static str                // random per process
 pub struct Accepted { pub peer: String, pub claims: BTreeMap<String, String>, pub protocol: String, pub metadata: Vec<u8> }  // non_exhaustive
-pub type Handler = Box<dyn Fn(&dyn Channel, &Accepted) + Send + Sync>;
+pub type Handler = Box<dyn Fn(&dyn LinkStream, &Accepted) + Send + Sync>;
 pub fn Services::with(self, protocol: &str, handler: Handler) -> Services   // Default
 pub fn Services::offers(&self, protocol: &str) -> bool
 pub fn Services::tokens(&self) -> impl Iterator<Item = &str>
