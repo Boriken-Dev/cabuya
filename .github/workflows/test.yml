@@ -1,0 +1,95 @@
+name: Test
+
+# On demand: workflow_dispatch (optionally at a ref), or a pushed "ci-*" tag, deleted after its run.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to test (branch, tag, or SHA)"
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to test (branch, tag, or SHA)"
+        type: string
+        required: false
+        default: ""
+  push:
+    tags:
+      - "ci-*"
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        toolchain: [stable, "1.89"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # The JavaScript joiner of the pairing test, at the revision Cargo.toml pins.
+      - uses: actions/checkout@v4
+        with:
+          repository: Boriken-Dev/coqui-peer-noise
+          ref: 3a5b30689780a6e6291af565ff6abbaae515973c
+          path: peer-noise
+      # The library this one was extracted from: its vectors must be the same bytes.
+      - uses: actions/checkout@v4
+        with:
+          repository: Boriken-Dev/coqui-agentic-peer
+          ref: f45938e
+          path: agentic-peer
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --all-targets --no-default-features -- -D warnings
+      - run: cargo test --all-features
+        env:
+          COQUI_LINK_TEST_NOISE: ${{ github.workspace }}/peer-noise/bindings/js/coqui-peer-noise/src/index.mjs
+          COQUI_LINK_SOURCE_VECTORS: ${{ github.workspace }}/agentic-peer/vectors/mux.json
+      - run: cargo test --no-default-features
+      - run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  js:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/js
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm test
+
+  dart:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/dart/coqui_link
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get
+      - run: dart analyze
+      - run: dart test
