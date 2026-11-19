@@ -35,7 +35,7 @@ socket2 = { version = "0.6", optional = true }
 [dev-dependencies]
 proptest = "1"
 # The interoperability test talks to the library this one was extracted from.
-coqui-agentic-peer = { git = "https://github.com/Boriken-Dev/coqui-agentic-peer", rev = "f45938e" }
+coqui-agentic-peer = { git = "https://github.com/Boriken-Dev/coqui-agentic-peer", rev = "f45938e8cede85a2a2e00afedea1b4944f7c8a67" }
 
 [package.metadata.docs.rs]
 all-features = true
