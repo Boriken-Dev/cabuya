@@ -33,6 +33,8 @@ pub fn Mux::open_with(&self, protocol: &str, metadata: &[u8]) -> Result<Stream<'
 pub fn Mux::accept(&self, timeout: Option<Duration>) -> Result<Option<Incoming<'c, C>>, Failure>
 pub fn Mux::link_state(&self) -> LinkState
 impl Channel for Stream<'_, C>   // send, receive, close; closes on drop
+pub enum StreamLife { Open, Draining, Gone }   // Draining: the peer closed in order, what it sent can still be read
+pub trait LinkStream: Channel { fn life(&self) -> StreamLife; fn finish(&self) -> Result<(), Failure>; fn finished_by_peer(&self) -> bool /* default false */; fn close_with(&self, reason: CloseReason, text: &str); }   // what a service is given; implemented by Stream
 pub fn Stream::try_send(&self, message: &[u8]) -> Result<(), Failure>    // NoProgress at once when full, uncharged
 pub fn Stream::finish(&self) -> Result<(), Failure>                      // sends nothing more, goes on reading; the peer's receive answers None
 pub fn Stream::close_with(&self, reason: CloseReason, text: &str)        // refused, superseded or revoked, saying why
@@ -157,6 +159,7 @@ PIN pairing over any channel in binary frames, with the PIN shown by the respond
 
 ```rust
 pub const TCP_PROTOCOL: &str = "tcp/1";
+pub struct BadTarget;                                 // the error of Target's FromStr; Display, Error
 pub struct Target;                                    // FromStr, Display: HOST:PORT in one spelling; "localhost:80" is not "127.0.0.1:80"
 Target::grant_token(&self) -> String                  // "tcp/1:HOST:PORT"
 Target::from_grant_token(token: &str) -> Option<Target>
