@@ -2,6 +2,8 @@
 //! proof methods, a stream opened each way, and a stream ended by a grant taken away and by an admission refusing.
 #![allow(clippy::std_instead_of_core, clippy::std_instead_of_alloc)]
 
+mod common;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -188,7 +190,7 @@ macro_rules! stack {
                                 back.receive(WAIT).map(|m| m.map(String::from_utf8))
                             ))
                             .unwrap();
-                        if revoke_grant.recv_timeout(Duration::from_secs(60)).is_ok() {
+                        if revoke_grant.recv_timeout(Duration::from_secs(30)).is_ok() {
                             store_ref
                                 .put(&PeerRecord::new(peer_ref).granting("gated/1"))
                                 .unwrap();
@@ -225,8 +227,13 @@ fn run(
     };
     thread::scope(|scope| {
         let answering = scope.spawn(|| answer(&far, blocked, revoke_seen, report));
-        dial(&near, &controls);
+        // A failed assertion on the dialing side must still end the link, or the answering side waits for it.
+        let dialed =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dial(&near, &controls)));
         near.close();
+        if let Err(panic) = dialed {
+            std::panic::resume_unwind(panic);
+        }
         answering.join().unwrap();
     });
     assert_eq!(
@@ -243,6 +250,7 @@ fn run(
 
 #[test]
 fn this_crate_dials_and_agentic_peer_answers_under_each_method() {
+    let _deadline = common::within(90);
     for noise in [true, false] {
         let (dialer, answerer) = (link_side::party(noise), peer_side::party(noise));
         let (dialer_id, answerer_id) = (link_side::id(&dialer), peer_side::id(&answerer));
@@ -257,6 +265,7 @@ fn this_crate_dials_and_agentic_peer_answers_under_each_method() {
 
 #[test]
 fn agentic_peer_dials_and_this_crate_answers_under_each_method() {
+    let _deadline = common::within(90);
     for noise in [true, false] {
         let (dialer, answerer) = (peer_side::party(noise), link_side::party(noise));
         let (dialer_id, answerer_id) = (peer_side::id(&dialer), link_side::id(&answerer));
@@ -271,6 +280,7 @@ fn agentic_peer_dials_and_this_crate_answers_under_each_method() {
 
 #[test]
 fn endpoints_of_different_methods_do_not_prove_in_either_direction() {
+    let _deadline = common::within(90);
     use coqui_agentic_peer::auth as theirs;
     use coqui_link::auth as ours;
 

@@ -16,6 +16,9 @@ pub mod mux;
 pub mod pairing;
 pub mod peers;
 
+#[cfg(test)]
+mod deadline;
+
 use core::fmt;
 
 /// What went wrong on a link.

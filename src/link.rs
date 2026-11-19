@@ -529,6 +529,7 @@ mod tests {
 
     #[test]
     fn one_entry_two_capabilities_and_claims_reach_the_service() {
+        let _deadline = crate::deadline::within(60);
         let store = MemoryPeers::default();
         store
             .put(
@@ -553,6 +554,7 @@ mod tests {
 
     #[test]
     fn being_admitted_grants_nothing_and_a_grant_added_later_needs_no_second_pairing() {
+        let _deadline = crate::deadline::within(60);
         let store = MemoryPeers::default();
         store
             .put(&PeerRecord::new("peer").granting("acp/1"))
@@ -589,6 +591,7 @@ mod tests {
 
     #[test]
     fn nothing_unserved_and_no_record_means_refused() {
+        let _deadline = crate::deadline::within(60);
         let store = MemoryPeers::default();
         with_host(&store, &NoEvents, |mux| {
             assert_eq!(
@@ -613,6 +616,7 @@ mod tests {
 
     #[test]
     fn taking_a_grant_away_ends_that_stream_saying_so_and_leaves_the_other() {
+        let _deadline = crate::deadline::within(60);
         let store = MemoryPeers::default();
         store
             .put(&PeerRecord::new("peer").granting("acp/1").granting("mcp"))
@@ -668,6 +672,7 @@ mod tests {
 
     #[test]
     fn a_store_that_cannot_be_read_fails_closed() {
+        let _deadline = crate::deadline::within(60);
         let store = Breakable::default();
         store
             .put(&PeerRecord::new("peer").granting("acp/1"))
@@ -696,6 +701,7 @@ mod tests {
 
     #[test]
     fn a_slow_service_holds_up_nothing_else() {
+        let _deadline = crate::deadline::within(60);
         let store = MemoryPeers::default();
         store
             .put(&PeerRecord::new("peer").granting("slow").granting("fast"))
@@ -741,6 +747,7 @@ mod tests {
 
     #[test]
     fn a_refused_stream_is_told_why_before_it_closes() {
+        let _deadline = crate::deadline::within(60);
         let store = MemoryPeers::default();
         with_host(&store, &NoEvents, |mux| {
             let stream = mux.open("mcp").unwrap();
@@ -753,6 +760,7 @@ mod tests {
 
     #[test]
     fn a_prefilled_channel_gives_its_first_message_first() {
+        let _deadline = crate::deadline::within(60);
         let (ours, theirs) = wires();
         theirs.out.send(b"second".to_vec()).unwrap();
         let channel = Prefilled::new(&ours, b"first".to_vec());
@@ -762,6 +770,7 @@ mod tests {
 
     #[test]
     fn opening_as_fast_as_it_can_does_not_put_off_a_revocation() {
+        let _deadline = crate::deadline::within(60);
         let store = MemoryPeers::default();
         store
             .put(&PeerRecord::new("peer").granting("acp/1"))
@@ -794,6 +803,7 @@ mod tests {
 
     #[test]
     fn a_revocation_is_reported_once() {
+        let _deadline = crate::deadline::within(60);
         let store = MemoryPeers::default();
         store
             .put(&PeerRecord::new("peer").granting("acp/1"))

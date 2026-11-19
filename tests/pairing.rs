@@ -2,6 +2,8 @@
 //! joiner of the other method refused.
 #![allow(clippy::std_instead_of_core, clippy::std_instead_of_alloc)]
 
+mod common;
+
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -91,6 +93,7 @@ fn accepted_methods(store: &TrustStore) -> Vec<String> {
 
 #[test]
 fn a_pin_pairs_under_each_method_and_the_pinned_link_then_proves_by_it() {
+    let _deadline = common::within(120);
     for method in Method::ALL {
         let dir = Dir::new(method.name());
         let (server, client) = (
@@ -145,6 +148,7 @@ fn a_pin_pairs_under_each_method_and_the_pinned_link_then_proves_by_it() {
 
 #[test]
 fn a_joiner_of_the_other_method_is_refused_and_nobody_is_stored() {
+    let _deadline = common::within(120);
     for (joining, responding) in [
         (Method::WebCrypto, Method::Noise),
         (Method::Noise, Method::WebCrypto),
@@ -180,6 +184,7 @@ fn a_joiner_of_the_other_method_is_refused_and_nobody_is_stored() {
 
 #[test]
 fn a_silent_noise_joiner_is_sent_away_within_the_responders_limit() {
+    let _deadline = common::within(120);
     let dir = Dir::new("silent");
     let server = Identity::generate(Method::Noise).unwrap();
     let client = Identity::generate(Method::Noise).unwrap();
@@ -325,6 +330,7 @@ fn noise_module() -> Option<(PathBuf, PathBuf)> {
 
 #[test]
 fn the_javascript_module_pairs_by_pin_with_a_rust_responder_then_proves_by_noise() {
+    let _deadline = common::within(120);
     let Some((node, module)) = noise_module() else {
         return;
     };
@@ -366,6 +372,7 @@ fn the_javascript_module_pairs_by_pin_with_a_rust_responder_then_proves_by_noise
 
 #[test]
 fn the_javascript_module_with_a_wrong_pin_pairs_nobody() {
+    let _deadline = common::within(120);
     let Some((node, module)) = noise_module() else {
         return;
     };
