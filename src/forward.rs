@@ -1690,6 +1690,7 @@ mod tests {
         let took = with_serving_options(&store, options, |mux| {
             let stream = connect(mux, &target).unwrap();
             let mut connection = held.lock().unwrap().recv_timeout(WAIT).unwrap();
+            connection.set_read_timeout(Some(WAIT)).unwrap();
             // More than the socket buffers hold, so the writing side is stuck when the peer closes in order.
             let chunk = vec![1_u8; 512 * 1024];
             // Send until nothing is taken for a while: the pump holds a message it cannot write, so no credit comes back.
@@ -1705,7 +1706,6 @@ mod tests {
             // The target reads nothing for far longer than `stalled`, so the connection is reset rather than finished. Left
             // alone for the default 30 s it would deliver everything once this side reads, and end cleanly.
             thread::sleep(Duration::from_secs(1));
-            connection.set_read_timeout(Some(WAIT)).unwrap();
             let mut everything = Vec::new();
             assert!(
                 connection.read_to_end(&mut everything).is_err(),
