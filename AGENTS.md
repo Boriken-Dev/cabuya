@@ -113,7 +113,8 @@ pub fn Identity::key_material(&self) -> KeyMaterial
 pub fn read_identity(path: &Path) -> Result<Identity, Error>
 pub fn create_identity(path: &Path, method: Method) -> Result<PeerId, Error>
 
-pub enum Trust { Pinned(BTreeSet<PeerId>), Store(TrustStore) }   // Clone; Trust::pinned(ids); non_exhaustive
+pub enum Trust { Pinned(BTreeSet<PeerId>), Store(TrustStore), Asked(Arc<Asking>) }   // Clone; Trust::pinned(ids), Trust::asked(f); non_exhaustive
+pub type Asking = dyn Fn(&KeyMaterial, bool, Option<SocketAddr>) -> bool + Send + Sync;   // the proven key, whether this side answered, the connection's source; true admits
 pub enum Proof { WebCrypto(WebCrypto), Noise(Noise) }            // Clone, From both; impl coqui_peer::Method: Handshake = ProofHandshake, Output = Session, Error = ProofError
 pub fn Proof::builder(identity: Identity) -> ProofBuilder        // identity's method, neither role yet
 impl ProofBuilder {                                              // Debug, not Clone; must_use
@@ -138,6 +139,8 @@ pub const fn Sealed::method(&self) -> Method
 pub fn Sealed::with_check(self, allowed: impl Fn() -> bool + Send + Sync + 'a) -> Sealed<'a, C>   // a check that cannot tell must say no
 pub const fn Sealed::with_check_every(self, recheck: Duration) -> Sealed<'a, C>                    // a second unless set
 ```
+
+`Trust::Asked` leaves the decision to the host, under either method: the closure runs once per handshake, only for a key whose proof held, and records nothing itself, so a host keeps its own accepted list and queues a proven stranger in the closure. `prove` passes `None` as the source.
 
 An endpoint proves by one method, chosen when it is built: nothing on the wire names it and nothing negotiates it. A peer of the other method fails the handshake; the responder's `Error::OtherMethod` names both methods, from the shape of the first message (WebCrypto's is JSON, Noise's 32 bytes), and the side that connected sees only the connection end, as `Error::Channel`. A peer id is the hash of a key of one type, so only its own method proves it: store the method with the id, and never fall back on a failure.
 

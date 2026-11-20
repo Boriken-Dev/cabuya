@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `auth::Trust::Asked` and `Trust::asked(closure)`: the host decides whether a proven key is admitted, under either method, once per handshake and never for a key whose proof failed, with the key, whether this side answered, and the source. It records nothing itself. coqui-peer-noise and coqui-peer-webcrypto are pinned at the revisions that carry the same variant.
 - `mux`: named streams inside one link, with credit per stream, metadata on open, a distinct cause for every end, and an optional heartbeat, in Rust, Dart and JavaScript, on one set of vectors.
 - `peers` and `link`: claims and grants per peer behind a `PeerStore` trait with audit events, and serving a link under them, failing closed, with a capability document and per-protocol admission.
 - `auth` and `pairing` (feature `sealed`): Noise and WebCrypto identities, proof, the sealed channel, and PIN pairing over any channel.
