@@ -1963,6 +1963,8 @@ mod tests {
             window: 4096,
             max_window: 1024 * 1024,
             auto_window: true,
+            // A loaded machine may hold a sender longer than the default wait for credit.
+            send_wait: Duration::from_secs(30),
             ..Limits::default()
         };
         let (a, b) = slow_wires(Duration::from_millis(50));
