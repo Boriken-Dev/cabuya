@@ -16,7 +16,7 @@ pub const MAX_PROTOCOL: usize = 64;
 pub fn valid_protocol(protocol: &str) -> bool      // printable ASCII, no space, comma or equals; goes in a DNS-SD record as it is
 pub fn starts_mux(first_message: &[u8]) -> bool    // true for a link with streams; JSON never starts with a zero byte
 pub const MAX_REASON: usize = 256;
-pub struct Limits { pub max_streams: usize, pub max_per_protocol: usize, pub window: u32, pub max_message: usize, pub max_frame: usize, pub max_metadata: usize, pub max_pending_opens: usize, pub max_opens_per_minute: u32, pub send_wait: Duration, pub heartbeat: Option<Heartbeat> }  // non_exhaustive, Default
+pub struct Limits { pub max_streams: usize, pub max_per_protocol: usize, pub window: u32, pub max_window: u32, pub auto_window: bool, pub max_message: usize, pub max_frame: usize, pub max_metadata: usize, pub max_pending_opens: usize, pub max_opens_per_minute: u32, pub send_wait: Duration, pub heartbeat: Option<Heartbeat> }  // non_exhaustive, Default
 pub struct Heartbeat { pub interval: Duration, pub misses: u32 }    // non_exhaustive; Heartbeat::new(interval, misses)
 pub enum Side { Dialed, Answered }
 pub enum Frame { Open { stream, protocol, metadata }, Data { stream, body }, More { stream, body }, Credit { stream, bytes }, Finish { stream }, Close { stream, reason, text }, Ping, Pong }  // non_exhaustive
@@ -34,11 +34,13 @@ pub fn Mux::accept(&self, timeout: Option<Duration>) -> Result<Option<Incoming<'
 pub fn Mux::link_state(&self) -> LinkState
 impl Channel for Stream<'_, C>   // send, receive, close; closes on drop
 pub enum StreamLife { Open, Draining, Gone }   // Draining: the peer closed in order, what it sent can still be read
-pub trait LinkStream: Channel { fn life(&self) -> StreamLife; fn finish(&self) -> Result<(), Failure>; fn finished_by_peer(&self) -> bool /* default false */; fn close_with(&self, reason: CloseReason, text: &str); }   // what a service is given; implemented by Stream
+pub trait LinkStream: Channel { fn life(&self) -> StreamLife; fn finish(&self) -> Result<(), Failure>; fn finished_by_peer(&self) -> bool /* default false */; fn grant(&self, bytes: u32) -> Result<u32, Failure> /* default Err(Unsupported) */; fn close_with(&self, reason: CloseReason, text: &str); }   // what a service is given; implemented by Stream
 pub fn Stream::try_send(&self, message: &[u8]) -> Result<(), Failure>    // NoProgress at once when full, uncharged
 pub fn Stream::finish(&self) -> Result<(), Failure>                      // sends nothing more, goes on reading; the peer's receive answers None
 pub fn Stream::close_with(&self, reason: CloseReason, text: &str)        // refused, superseded or revoked, saying why
 pub fn Stream::end(&self) -> Option<StreamEnd>
+pub fn Stream::window(&self) -> u32                                       // what this side lets the peer have in flight: `Limits::window` at first
+pub fn Stream::grant(&self, bytes: u32) -> Result<u32, Failure>          // widens it by `bytes`, capped at the larger of `max_window` and `window`; one credit frame; answers the new window; the stream's end as Err once it has ended
 pub fn Stream::finished_by_peer(&self) -> bool                            // the peer sent `finish`; also on LinkStream (default false)
 ```
 
@@ -49,6 +51,7 @@ pub fn Stream::finished_by_peer(&self) -> bool                            // the
 - A long message is cut into frames of `max_frame`, so another stream's message passes between its parts. Only the first part can be taken back: past that, a link that will not take the rest is lost.
 - A stream delivers in order or fails, and never skips. Nothing is ordered across streams. Nothing replays: to survive a drop, reopen with your own cursor in `metadata`. Either side opens streams, whoever connected.
 - `Limits::heartbeat` is off by default, and a zero interval or zero misses turns it off too. It loses a link only when nothing at all is heard, so a stream silent for hours is fine. `link_state` says when a link went; what that means is the host's to decide.
+- `Limits::window` is the credit both sides assume at a stream's start (not negotiated), so keep it the same on both. A receiver that wants more on one stream grants it with `Stream::grant`: credit past what was read is already accepted by every sender (Rust, Dart, JavaScript, `coqui-agentic-peer`), so no peer needs to change. `max_window` bounds it (below `window` means `window`, so nothing grows by default). `auto_window` (off) grows a stream by itself: while data arrives it sends one `ping` at a time, and a stream that received over two thirds of its window before the `pong` doubles, up to `max_window`; it never shrinks. A grown stream can hold `max_window` unread, so set it to what each stream may cost in memory. Dart and JavaScript have `grant` and `maxWindow` (`stream.window`), not `auto_window`.
 - What one stream does wrong ends that stream. What no peer may send ends the link.
 - A proof admits a peer to the link and grants no protocol. Deciding who may open what is the caller's: `accept`, then serve, or `close_with(CloseReason::Refused, why)`. `metadata` is kept nowhere, and is not a credential of the link's.
 
@@ -68,7 +71,7 @@ Services::with_admission(self, protocol: &str, handler: Handler, admission: Admi
 pub fn serve_with<'c, C: Channel>(channel: &'c C, side: Side, options: Options, first: Option<Vec<u8>>, peer: &str, host: &Host<'_>, opener: impl FnOnce(&Mux<'c, C>) + Send)
 pub struct Host<'a> { pub store: &'a dyn PeerStore, pub services: &'a Services, pub events: &'a dyn Events }
 pub fn serve<C: Channel>(channel: &C, side: Side, options: Options, first: Option<Vec<u8>>, peer: &str, host: &Host<'_>)
-pub struct Capabilities { pub instance: String, pub offers: Vec<String> }  // non_exhaustive
+pub struct Capabilities { pub instance: String, pub offers: Vec<String>, pub window: Option<u32>, pub max_frame: Option<usize> }  // non_exhaustive; window and max_frame are the other side's `Limits`, None from an older peer: a host reports a difference in `window`
 pub fn capabilities<C: Channel>(mux: &Mux<'_, C>, wait: Duration) -> Result<Capabilities, Failure>
 pub struct Prefilled<'a, C>;  // impl Channel; Prefilled::new(channel, first)
 ```

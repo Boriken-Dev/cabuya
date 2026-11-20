@@ -76,10 +76,10 @@ Optional, off unless set, at link level. A side sends `ping` every interval, and
 Any admitted peer may open `link/1`. The other side answers with one JSON message and finishes:
 
 ```json
-{ "version": 1, "instance": "9f2c…", "peer": "sha256:…", "offers": ["files/1", "rpc/1"] }
+{ "version": 1, "instance": "9f2c…", "peer": "sha256:…", "offers": ["files/1", "rpc/1"], "window": 1048576, "max_frame": 65536 }
 ```
 
-`offers` is what this peer may open there now, which is authoritative where a DNS-SD record's `offers` is only a hint. `instance` is random per process, so a peer seeing a different one after a drop knows the other side restarted and lost what it held, as against a blip.
+`offers` is what this peer may open there now, which is authoritative where a DNS-SD record's `offers` is only a hint. `instance` is random per process, so a peer seeing a different one after a drop knows the other side restarted and lost what it held, as against a blip. `window` and `max_frame` are that side's initial window and largest frame, so a host can report a difference (see Flow control); an older peer leaves them out.
 
 A key is one entry in one store, so a new capability is a grant on that entry and never another pairing. Each open is decided against the grants, and each running stream again at an interval the host sets. A grant taken away ends its stream with `revoked`. A store that cannot be read refuses, so nothing fails open.
 
@@ -95,6 +95,8 @@ A stream's data frames are the connection's bytes in order, with no framing of t
 
 Each direction of each stream starts with a window of credit, 1 MiB by default. Sending a message costs its size in credit. A sender MAY start a message only while its credit is above zero, so a message larger than the window still passes, one at a time. A receiver returns credit as the application reads, not as the link delivers.
 
+The initial window is not negotiated: both sides start a stream from it, so it is one setting for a deployment. A receiver that wants a stream wider grants credit beyond what it has read, as one `credit` frame, and raises the window it holds that stream to by the same amount, so the check below uses it. A sender counts credit without a cap below 2^32 - 1, so every implementation already accepts it and the peer needs no change. How far a stream may grow is the receiver's own `max_window`, since the receiver pays the memory. A receiver may also grow a stream by itself: while data arrives with none outstanding it sends a `ping`, counts the bytes that arrive until the `pong`, and if that is over two thirds of the stream's window doubles it, up to `max_window`. One stream moves at most its window per round trip, so on a long path this is what lifts it.
+
 So a stream whose reader has stopped stalls only itself, and a receiver holds at most its window and one message for each stream. A peer that sends past that loses that stream, with `close` and `broken`, and keeps the link. Credit is what every other stream depends on, so a frame the mux owes the peer is not dropped when the link is momentarily full.
 
 ## Telling a link from a plain message
@@ -103,6 +105,6 @@ After the proof, the side that connected speaks first. A first message whose fir
 
 ## Limits
 
-A peer can make a mux hold no more than: 32 streams, 16 of one protocol, 8 opens nobody has accepted, 4 KiB of metadata on each, 600 opens a minute, and on each stream its window and one message of at most 16 MiB, which an unfinished message counts against. These are defaults, and each is a setting. An `open` past them is refused, not queued.
+A peer can make a mux hold no more than: 32 streams, 16 of one protocol, 8 opens nobody has accepted, 4 KiB of metadata on each, 600 opens a minute, and on each stream its window (up to `max_window` where it was widened) and one message of at most 16 MiB, which an unfinished message counts against. These are defaults, and each is a setting. An `open` past them is refused, not queued.
 
 A frame adds 5 bytes, so the link's own largest message has to be 5 bytes larger than the largest frame.
