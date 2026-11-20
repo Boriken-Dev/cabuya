@@ -167,7 +167,11 @@ fn attempt(
         (joined, answering.join().unwrap())
     });
     let stored = server_store.accepted().unwrap().len();
-    (joined.map(|_| ()), answered.map(|_| ()), stored)
+    (
+        joined.map(|_| ()),
+        answered.map(|_| ()).map_err(|unanswered| unanswered.error),
+        stored,
+    )
 }
 
 #[test]
@@ -249,8 +253,10 @@ fn a_listener_that_does_not_pair_sends_a_joiner_away_and_still_proves() {
         assert!(joined.is_err());
         answering.join().unwrap()
     });
-    let Err(Error::Proof(why)) = answered else {
-        panic!("a joiner was answered: {answered:?}");
+    let unanswered = answered.unwrap_err();
+    assert!(unanswered.pairing);
+    let Error::Proof(why) = unanswered.error else {
+        panic!("not a refusal: {unanswered}");
     };
     assert!(why.contains("not offered"), "{why}");
 }

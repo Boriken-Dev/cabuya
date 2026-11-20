@@ -285,13 +285,32 @@ pub struct PairingHost<'a> {
     pub desk: &'a PairingDesk,
 }
 
+/// Why [`answer`] ended without an answer, and whether the connection was a pairing.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct Unanswered {
+    /// `true` when the joiner sent [`MARKER`]: a refused pairing, never a failed proof.
+    pub pairing: bool,
+    /// What went wrong, as [`respond`] or [`prove`] report it.
+    pub error: Error,
+}
+
+impl core::fmt::Display for Unanswered {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
+impl core::error::Error for Unanswered {}
+
 /// The responder of a listener that takes proofs and pairings: reads the first message, and runs [`respond`] when it is
 /// [`MARKER`], otherwise [`prove`] with `method` (the message is not lost). `limit` bounds the whole run. With `pairing` `None`
 /// a joiner is sent away at once, unanswered.
 ///
 /// # Errors
 ///
-/// As [`respond`] for a pairing and [`prove`] for a proof; [`Error::Channel`] for silence before the first message.
+/// [`Unanswered`], holding what [`respond`] reports for a pairing and what [`prove`] reports for a proof, or
+/// [`Error::Channel`] for silence before the first message.
 pub fn answer<M: coqui_peer::Method, C: Channel>(
     channel: &C,
     method: &M,
@@ -299,15 +318,22 @@ pub fn answer<M: coqui_peer::Method, C: Channel>(
     pairing: Option<PairingHost<'_>>,
     source: Option<SocketAddr>,
     limit: Duration,
-) -> Result<Answered<<M::Handshake as Handshake>::Output>, Error> {
+) -> Result<Answered<<M::Handshake as Handshake>::Output>, Unanswered> {
     let deadline = Instant::now() + limit;
-    let first = crate::auth::next(channel, deadline)?;
+    let first = crate::auth::next(channel, deadline).map_err(|error| Unanswered {
+        pairing: false,
+        error,
+    })?;
     let left = deadline.saturating_duration_since(Instant::now());
     if starts_pairing(&first) {
+        let unanswered = |error| Unanswered {
+            pairing: true,
+            error,
+        };
         let Some(pairing) = pairing else {
-            return Err(Error::Proof(
+            return Err(unanswered(Error::Proof(
                 "pairing is not offered on this listener".to_owned(),
-            ));
+            )));
         };
         respond(
             channel,
@@ -318,9 +344,15 @@ pub fn answer<M: coqui_peer::Method, C: Channel>(
             left,
         )
         .map(Answered::Paired)
+        .map_err(unanswered)
     } else {
         let channel = Prefilled::new(channel, first);
-        prove(method, &channel, left, max_message).map(Answered::Proven)
+        prove(method, &channel, left, max_message)
+            .map(Answered::Proven)
+            .map_err(|error| Unanswered {
+                pairing: false,
+                error,
+            })
     }
 }
 
