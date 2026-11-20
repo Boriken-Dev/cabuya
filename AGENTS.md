@@ -5,7 +5,7 @@ Header-file-style reference for the `coqui-link` crate: every public item with i
 | Feature | Adds | Default |
 | --- | --- | --- |
 | `sealed` | `auth` and `pairing`; `coqui-peer`, `coqui-peer-noise` and `coqui-peer-webcrypto` (each with `pin`), `coqui-builder` | no |
-| `forward` | `forward`; `socket2` | no |
+| `forward` | `forward`; `socket2`, `coqui-net-acl` | no |
 
 MSRV Rust 1.89. Version `0.0.0-alpha.0`, not published. A default build depends on `coqui-transport` (by revision, no default features; its `Channel` and `Failure` are what every link and stream is generic over) and `serde_json`. Nothing is re-exported at the root but `Error`; the public modules are `mux`, `link` and `peers`, with `auth` and `pairing` under `sealed` and `forward` under `forward`. No `unsafe` code.
 
@@ -158,12 +158,25 @@ PIN pairing over any channel in binary frames, with the PIN shown by the respond
 
 ## `coqui_link::forward` (feature `forward`)
 
-`tcp/1`: one TCP connection per stream, in either direction. The widest capability there is, so a peer needs `tcp/1` and a grant naming the target exactly, with no wildcards. A refusal happens before anything connects, and removing either grant ends running streams within `Options::recheck`.
+`tcp/1`: one TCP connection per stream, in either direction. The widest capability there is, so a peer needs `tcp/1` and a grant `tcp/1:RULE` that matches the target: a token naming one target (an exact rule, as before) or a `Rule` pattern the operator wrote. A refusal happens before anything connects, and removing either grant ends running streams within `Options::recheck`.
 
 ```rust
 pub const TCP_PROTOCOL: &str = "tcp/1";
 pub struct BadTarget;                                 // the error of Target's FromStr; Display, Error
 pub struct Target;                                    // FromStr, Display: HOST:PORT in one spelling; "localhost:80" is not "127.0.0.1:80"
+Target::connect_within(&self, timeout: Duration) -> io::Result<TcpStream>   // each resolved address up to `timeout`; Err for zero
+pub struct BadRule;                                   // the error of Rule's FromStr; Display, Error
+pub struct Rule;                                      // Clone, Eq, Hash, FromStr, Display, From<&Target>: HOST:PORT, HOST = name | *.suffix | * | address | CIDR (IPv6 in brackets), PORT = N | A-B | *
+Rule::matches(&self, target: &Target) -> bool         // nothing resolves: an address/network rule matches address targets only, a name rule name targets only, * both
+Rule::grant_token(&self) -> String                    // "tcp/1:RULE"
+Rule::from_grant_token(token: &str) -> Option<Rule>   // a target's token is that target's rule
+pub fn grant_rule(record: PeerRecord, rule: &Rule) -> PeerRecord
+pub struct Options { pub connect_timeout: Duration /*10 s*/, pub chunk: usize /*16 KiB*/, pub stalled: Duration /*30 s*/, pub idle_min: Duration /*1 ms*/, pub idle_max: Duration /*10 ms*/, pub watch: Duration /*50 ms*/, pub listen_poll: Duration /*50 ms*/ }   // non_exhaustive, Default = what pump, listen and serving use
+Options::validate(&self) -> Result<(), BadOptions>    // zero durations or chunk, and idle_max < idle_min, are refused; nothing else is limited
+pub struct BadOptions;                                // Display names the option; Error
+pub fn serving_with(services: Services, options: Options) -> Result<Services, BadOptions>
+pub fn pump_with<S: LinkStream + ?Sized>(stream: &S, connection: &TcpStream, options: &Options)   // invalid options refuse the stream
+pub fn listen_with<C: Channel>(mux: &Mux<'_, C>, listener: &TcpListener, target: &Target, options: &Options) -> io::Result<()>   // InvalidInput for invalid options
 Target::grant_token(&self) -> String                  // "tcp/1:HOST:PORT"
 Target::from_grant_token(token: &str) -> Option<Target>
 pub fn grant(record: PeerRecord, target: &Target) -> PeerRecord

@@ -20,7 +20,7 @@ a stream carries the application's own messages. See the [documentation](https:/
   peer's record, and each running stream again, so a grant taken away ends its stream. A store that cannot be read refuses.
 - **Proof and pairing** (`auth`, `pairing`, feature `sealed`): Noise or WebCrypto identities, a sealed channel, and PIN
   pairing over any channel.
-- **Forwarding** (`forward`, feature `forward`): one TCP connection per stream, in either direction, each target its own grant.
+- **Forwarding** (`forward`, feature `forward`): one TCP connection per stream, in either direction, each target its own grant, or a rule (name, `*.suffix`, address or network, port range) the operator writes.
 
 ## Installation
 
@@ -31,7 +31,7 @@ cargo add coqui-link --git https://github.com/Boriken-Dev/coqui-link
 | Feature | Adds | Default |
 | --- | --- | --- |
 | `sealed` | `auth` and `pairing`, with `coqui-peer`, `coqui-peer-noise` and `coqui-peer-webcrypto` | no |
-| `forward` | `forward`, with `socket2` | no |
+| `forward` | `forward`, with `socket2` and `coqui-net-acl` | no |
 
 Without a feature the crate needs only `coqui-transport` and `serde_json`: a streams-only user carries no cryptography.
 
