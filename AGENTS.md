@@ -152,12 +152,19 @@ An endpoint proves by one method, chosen when it is built: nothing on the wire n
 ## `coqui_link::pairing` (feature `sealed`)
 
 ```rust
-pub fn desk() -> Result<PairingDesk, Error>   // PIN runs only
+pub fn desk() -> Result<PairingDesk, Error>   // PIN runs only, coqui-peer's defaults
+pub fn desk_with(options: PairingOptions, limits: DeskLimits) -> Result<PairingDesk, Error>   // PIN lifetime, attempts, alphabet, pending bounds; invitation and device stay off
 pub fn respond<C: Channel>(channel: &C, identity: &Identity, store: &TrustStore, desk: &PairingDesk, source: Option<SocketAddr>, limit: Duration) -> Result<Paired, Error>
 pub fn join<C: Channel>(channel: &C, identity: &Identity, pin: Pin, store: &TrustStore, limit: Duration) -> Result<Paired, Error>
+pub const MARKER: &[u8];                  // what a joiner sends first on a listener that also takes proofs: not 32 bytes (Noise's first message), not JSON (WebCrypto's)
+pub fn starts_pairing(first_message: &[u8]) -> bool   // first_message == MARKER
+pub fn join_shared<C: Channel>(channel: &C, identity: &Identity, pin: Pin, store: &TrustStore, limit: Duration) -> Result<Paired, Error>   // MARKER, then join
+pub struct PairingHost<'a> { pub identity: &'a Identity, pub store: &'a TrustStore, pub desk: &'a PairingDesk }   // Clone, Copy
+pub enum Answered<T> { Paired(Paired), Proven(Established<T>) }   // non_exhaustive
+pub fn answer<M: coqui_peer::Method, C: Channel>(channel: &C, method: &M, max_message: usize, pairing: PairingHost<'_>, source: Option<SocketAddr>, limit: Duration) -> Result<Answered<..>, Error>   // reads the first message: MARKER runs respond, anything else prove(method, ..) with that message kept; limit bounds both
 ```
 
-PIN pairing over any channel in binary frames, with the PIN shown by the responder, by `identity`'s method: a joiner of the other method fails the handshake, and the responder's error names it. The key stored names its method, so the two then connect by it. A refusal's error says which: a wrong PIN, an expired one, a mode not offered. Under Noise, a joiner that proves itself and then says nothing is sent away as expired within `limit`, or Noise's own minute if that is sooner.
+A pairing and a proof begin with the same handshake message under both methods, so one listener tells them apart only by `MARKER`, sent first by `join_shared`; an unmarked `join` is for a listener that only pairs. A desk with no PIN shown refuses a joiner as one with none shown, and a wrong guess burns the PIN. PIN pairing over any channel in binary frames, with the PIN shown by the responder, by `identity`'s method: a joiner of the other method fails the handshake, and the responder's error names it. The key stored names its method, so the two then connect by it. A refusal's error says which: a wrong PIN, an expired one, a mode not offered. Under Noise, a joiner that proves itself and then says nothing is sent away as expired within `limit`, or Noise's own minute if that is sooner.
 
 ## `coqui_link::forward` (feature `forward`)
 
