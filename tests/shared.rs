@@ -106,7 +106,7 @@ fn a_pairing_and_a_proof_both_end_in_one_answer() {
         let (near, far) = wires();
         let (joined, answered) = thread::scope(|scope| {
             let answering =
-                scope.spawn(|| pairing::answer(&far, &proof, 1 << 16, host, None, SHORT));
+                scope.spawn(|| pairing::answer(&far, &proof, 1 << 16, Some(host), None, SHORT));
             let joined = pairing::join_shared(&near, &joiner, pin, &joiner_store, SHORT);
             (joined, answering.join().unwrap())
         });
@@ -125,7 +125,7 @@ fn a_pairing_and_a_proof_both_end_in_one_answer() {
         let (near, far) = wires();
         thread::scope(|scope| {
             let answering =
-                scope.spawn(|| pairing::answer(&far, &proof, 1 << 16, host, None, SHORT));
+                scope.spawn(|| pairing::answer(&far, &proof, 1 << 16, Some(host), None, SHORT));
             let done = prove_out(&dialing, &near, SHORT, 1 << 16).unwrap();
             Sealed::new(&near, done.session)
                 .send(b"over the link")
@@ -161,7 +161,8 @@ fn attempt(
     let pin = Pin::parse(&CodeAlphabet::pin(), pin).unwrap();
     let (near, far) = wires();
     let (joined, answered) = thread::scope(|scope| {
-        let answering = scope.spawn(|| pairing::answer(&far, &proof, 1 << 16, host, None, SHORT));
+        let answering =
+            scope.spawn(|| pairing::answer(&far, &proof, 1 << 16, Some(host), None, SHORT));
         let joined = pairing::join_shared(&near, &joiner, pin, &joiner_store, SHORT);
         (joined, answering.join().unwrap())
     });
@@ -227,4 +228,29 @@ fn a_marker_is_neither_a_noise_message_nor_json() {
     assert_ne!(pairing::MARKER.first(), Some(&b'{'));
     assert!(pairing::starts_pairing(pairing::MARKER));
     assert!(!pairing::starts_pairing(&[0_u8; 32]));
+}
+
+#[test]
+fn a_listener_that_does_not_pair_sends_a_joiner_away_and_still_proves() {
+    let _deadline = common::within(120);
+    let dir = Dir::new("none");
+    let (server, joiner) = (
+        Identity::generate(Method::Noise).unwrap(),
+        Identity::generate(Method::Noise).unwrap(),
+    );
+    let proof = Proof::builder(server).build().unwrap();
+    let store = dir.store("joiner");
+    let (near, far) = wires();
+    let pin = Pin::parse(&CodeAlphabet::pin(), "123456").unwrap();
+    let answered = thread::scope(|scope| {
+        let answering = scope
+            .spawn(|| pairing::answer(&far, &proof, 1 << 16, None, None, Duration::from_secs(2)));
+        let joined = pairing::join_shared(&near, &joiner, pin, &store, Duration::from_secs(2));
+        assert!(joined.is_err());
+        answering.join().unwrap()
+    });
+    let Err(Error::Proof(why)) = answered else {
+        panic!("a joiner was answered: {answered:?}");
+    };
+    assert!(why.contains("not offered"), "{why}");
 }

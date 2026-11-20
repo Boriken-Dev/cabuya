@@ -286,7 +286,8 @@ pub struct PairingHost<'a> {
 }
 
 /// The responder of a listener that takes proofs and pairings: reads the first message, and runs [`respond`] when it is
-/// [`MARKER`], otherwise [`prove`] with `method` (the message is not lost). `limit` bounds the whole run.
+/// [`MARKER`], otherwise [`prove`] with `method` (the message is not lost). `limit` bounds the whole run. With `pairing` `None`
+/// a joiner is sent away at once, unanswered.
 ///
 /// # Errors
 ///
@@ -295,7 +296,7 @@ pub fn answer<M: coqui_peer::Method, C: Channel>(
     channel: &C,
     method: &M,
     max_message: usize,
-    pairing: PairingHost<'_>,
+    pairing: Option<PairingHost<'_>>,
     source: Option<SocketAddr>,
     limit: Duration,
 ) -> Result<Answered<<M::Handshake as Handshake>::Output>, Error> {
@@ -303,6 +304,11 @@ pub fn answer<M: coqui_peer::Method, C: Channel>(
     let first = crate::auth::next(channel, deadline)?;
     let left = deadline.saturating_duration_since(Instant::now());
     if starts_pairing(&first) {
+        let Some(pairing) = pairing else {
+            return Err(Error::Proof(
+                "pairing is not offered on this listener".to_owned(),
+            ));
+        };
         respond(
             channel,
             pairing.identity,

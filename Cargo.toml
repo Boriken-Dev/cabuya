@@ -67,3 +67,7 @@ required-features = ["sealed", "forward"]
 [[test]]
 name = "asked"
 required-features = ["sealed"]
+
+[[test]]
+name = "shared"
+required-features = ["sealed"]
