@@ -63,8 +63,16 @@ pub struct Limits {
     /// Streams open at once speaking one protocol.
     pub max_per_protocol: usize,
     /// Bytes a peer may send on a stream ahead of what has been read. A message may overrun by its own size, so a message
-    /// larger than this can still pass one at a time.
+    /// larger than this can still pass one at a time. It is the credit both sides assume at a stream's start, so it has to be the
+    /// same on both sides; a side that wants more on one stream grants it with [`Stream::grant`], up to `max_window`.
     pub window: u32,
+    /// The most a stream's receive window may grow to, by [`Stream::grant`] or `auto_window`. A value below `window` means
+    /// `window`, so nothing grows unless this is set.
+    pub max_window: u32,
+    /// Grow a stream's receive window by itself: the link is probed with a `ping` while data arrives, and a stream that received
+    /// more than two thirds of its window before the `pong` comes back has its window doubled, up to `max_window`. Never shrinks.
+    /// Costs one `ping` per round trip while data flows, and memory up to `max_window` for each stream whose reader falls behind.
+    pub auto_window: bool,
     /// The largest message on a stream.
     pub max_message: usize,
     /// The largest part of a message in one frame, so a long message cannot hold other streams up for as long as it takes. An
@@ -82,12 +90,25 @@ pub struct Limits {
     pub heartbeat: Option<Heartbeat>,
 }
 
+impl Limits {
+    /// The most any stream's receive window may reach.
+    const fn ceiling(&self) -> u32 {
+        if self.max_window > self.window {
+            self.max_window
+        } else {
+            self.window
+        }
+    }
+}
+
 impl Default for Limits {
     fn default() -> Self {
         Self {
             max_streams: 32,
             max_per_protocol: 16,
             window: 1024 * 1024,
+            max_window: 1024 * 1024,
+            auto_window: false,
             max_message: 16 * 1024 * 1024,
             max_frame: 64 * 1024,
             max_metadata: 4096,
@@ -339,9 +360,12 @@ impl StreamEnd {
     }
 }
 
-#[derive(Default)]
 struct StreamState {
     protocol: String,
+    /// What this side lets the peer have in flight on the stream: `window` at first, raised by grants.
+    window: u32,
+    /// Bytes that arrived since the current probe began.
+    probe_bytes: usize,
     incoming: VecDeque<Vec<u8>>,
     /// The parts so far of a message still arriving.
     partial: Vec<u8>,
@@ -353,6 +377,23 @@ struct StreamState {
     peer_finished: bool,
     finished: bool,
     ended: Option<StreamEnd>,
+}
+
+impl StreamState {
+    fn new(protocol: String, window: u32) -> Self {
+        Self {
+            protocol,
+            window,
+            probe_bytes: 0,
+            incoming: VecDeque::new(),
+            partial: Vec::new(),
+            held: 0,
+            credit: i64::from(window),
+            peer_finished: false,
+            finished: false,
+            ended: None,
+        }
+    }
 }
 
 struct Waiting {
@@ -374,6 +415,8 @@ struct State {
     opens_this_minute: u32,
     minute_began: Instant,
     last_heard: Instant,
+    /// A `ping` sent to size the windows is out, and its `pong` has not come.
+    probing: bool,
 }
 
 struct Shared {
@@ -474,6 +517,7 @@ impl<'c, C: Channel> Mux<'c, C> {
                 opens_this_minute: 0,
                 minute_began: Instant::now(),
                 last_heard: Instant::now(),
+                probing: false,
             }),
             changed: Condvar::new(),
             opening: Mutex::new(()),
@@ -543,14 +587,9 @@ impl<'c, C: Channel> Mux<'c, C> {
             }
             let stream = state.next_stream;
             state.next_stream = stream.checked_add(2).ok_or(Failure::NoProgress)?;
-            state.streams.insert(
-                stream,
-                StreamState {
-                    protocol: protocol.to_owned(),
-                    credit: i64::from(limits.window),
-                    ..StreamState::default()
-                },
-            );
+            state
+                .streams
+                .insert(stream, StreamState::new(protocol.to_owned(), limits.window));
             stream
         };
         let sent = control(
@@ -734,8 +773,21 @@ impl<C: Channel> Reader<'_, '_, C> {
             return false;
         };
         let mut reply = None;
+        let mut owed = Vec::new();
         let fine = {
             let mut state = self.shared.lock();
+            let limits = &self.shared.limits;
+            // The first data after a probe ended starts the next one, and counts from its own bytes.
+            if limits.auto_window
+                && !state.probing
+                && matches!(frame, Frame::Data { .. } | Frame::More { .. })
+            {
+                state.probing = true;
+                for entry in state.streams.values_mut() {
+                    entry.probe_bytes = 0;
+                }
+                owed.push(Frame::Ping);
+            }
             match frame {
                 Frame::Open {
                     stream,
@@ -799,11 +851,33 @@ impl<C: Channel> Reader<'_, '_, C> {
                     reply = Some(Frame::Pong);
                     true
                 }
-                Frame::Pong => true,
+                Frame::Pong => {
+                    if state.probing {
+                        state.probing = false;
+                        let ceiling = limits.ceiling();
+                        for (&stream, entry) in &mut state.streams {
+                            let seen = u64::try_from(entry.probe_bytes).unwrap_or(u64::MAX);
+                            entry.probe_bytes = 0;
+                            if entry.ended.is_some()
+                                || entry.window >= ceiling
+                                || seen.saturating_mul(3) <= u64::from(entry.window) * 2
+                            {
+                                continue;
+                            }
+                            let wider = entry.window.saturating_mul(2).min(ceiling);
+                            owed.push(Frame::Credit {
+                                stream,
+                                bytes: wider - entry.window,
+                            });
+                            entry.window = wider;
+                        }
+                    }
+                    true
+                }
             }
         };
         self.shared.changed.notify_all();
-        if let Some(frame) = reply {
+        for frame in reply.into_iter().chain(owed) {
             let _ = control(self.channel, &frame);
         }
         fine
@@ -846,14 +920,9 @@ impl<C: Channel> Reader<'_, '_, C> {
             });
             return true;
         }
-        state.streams.insert(
-            stream,
-            StreamState {
-                protocol: protocol.clone(),
-                credit: i64::from(limits.window),
-                ..StreamState::default()
-            },
-        );
+        state
+            .streams
+            .insert(stream, StreamState::new(protocol.clone(), limits.window));
         state.pending.push_back(Waiting {
             stream,
             protocol,
@@ -879,7 +948,7 @@ impl<C: Channel> Reader<'_, '_, C> {
         }
         // A sender may start a message only while it has credit, so what is held before a new message is under the window. More
         // than that is a peer ignoring credit, and it costs that stream only. So at most a window and one message are ever held.
-        let window = usize::try_from(limits.window).unwrap_or(usize::MAX);
+        let window = usize::try_from(entry.window).unwrap_or(usize::MAX);
         let starting = entry.partial.is_empty();
         let whole = entry.partial.len().saturating_add(body.len());
         if whole > limits.max_message || (starting && entry.held >= window) || entry.peer_finished {
@@ -895,6 +964,7 @@ impl<C: Channel> Reader<'_, '_, C> {
             return;
         }
         entry.held += body.len();
+        entry.probe_bytes = entry.probe_bytes.saturating_add(body.len());
         entry.partial.extend_from_slice(body);
         if last {
             let message = core::mem::take(&mut entry.partial);
@@ -945,6 +1015,16 @@ pub trait LinkStream: Channel {
         false
     }
 
+    /// See [`Stream::grant`]. A carrier with no window to widen answers [`Failure::Unsupported`], which is what this says unless
+    /// it is overridden.
+    ///
+    /// # Errors
+    ///
+    /// As [`Stream::grant`].
+    fn grant(&self, _bytes: u32) -> Result<u32, Failure> {
+        Err(Failure::Unsupported)
+    }
+
     /// See [`Stream::close_with`].
     fn close_with(&self, reason: CloseReason, text: &str);
 }
@@ -973,6 +1053,10 @@ impl<C: Channel> LinkStream for Stream<'_, C> {
         Stream::finished_by_peer(self)
     }
 
+    fn grant(&self, bytes: u32) -> Result<u32, Failure> {
+        Stream::grant(self, bytes)
+    }
+
     fn close_with(&self, reason: CloseReason, text: &str) {
         Stream::close_with(self, reason, text);
     }
@@ -999,6 +1083,48 @@ impl<C: Channel> Stream<'_, C> {
             .streams
             .get(&self.id)
             .is_some_and(|entry| entry.peer_finished)
+    }
+
+    /// What this side lets the peer have in flight on the stream: [`Limits::window`] at first, and more after [`Stream::grant`] or
+    /// `auto_window`. A stream that is gone answers `Limits::window`.
+    #[must_use]
+    pub fn window(&self) -> u32 {
+        self.shared
+            .lock()
+            .streams
+            .get(&self.id)
+            .map_or(self.shared.limits.window, |entry| entry.window)
+    }
+
+    /// Widens what the peer may have in flight on this stream by `bytes`, up to [`Limits::max_window`], with one credit frame for
+    /// the increase, and answers the new window. The peer need not know anything: it counts the credit as it counts what is read,
+    /// and it only widens this stream, so a receiver that pays the memory chooses. A grant that can add nothing sends nothing.
+    ///
+    /// # Errors
+    ///
+    /// The stream's own end as a failure for one that has ended, and the link's own failure.
+    pub fn grant(&self, bytes: u32) -> Result<u32, Failure> {
+        let ceiling = self.shared.limits.ceiling();
+        let (window, more) = {
+            let mut state = self.shared.lock();
+            let entry = state.streams.get_mut(&self.id).ok_or(Failure::Protocol)?;
+            if let Some(end) = &entry.ended {
+                return Err(end.failure().unwrap_or(Failure::PathLost));
+            }
+            let more = bytes.min(ceiling.saturating_sub(entry.window));
+            entry.window += more;
+            (entry.window, more)
+        };
+        if more > 0 {
+            control(
+                self.channel,
+                &Frame::Credit {
+                    stream: self.id,
+                    bytes: more,
+                },
+            )?;
+        }
+        Ok(window)
     }
 
     /// Sends now or says it cannot: [`Failure::NoProgress`] means full, for a host that would rather drop a slow reader than wait.
@@ -1228,7 +1354,7 @@ mod tests {
         });
     }
 
-    fn accepted<'c>(mux: &Mux<'c, Wire>) -> Incoming<'c, Wire> {
+    fn accepted<'c, C: Channel>(mux: &Mux<'c, C>) -> Incoming<'c, C> {
         mux.accept(WAIT).unwrap().unwrap()
     }
 
@@ -1634,6 +1760,302 @@ mod tests {
                 }
             });
         });
+    }
+
+    /// Two ends in memory where each message takes `delay` to arrive, in order.
+    struct SlowWire {
+        out: Sender<(Instant, Vec<u8>)>,
+        incoming: Mutex<Receiver<(Instant, Vec<u8>)>>,
+        delay: Duration,
+    }
+
+    impl Channel for SlowWire {
+        fn send(&self, message: &[u8]) -> Result<(), Failure> {
+            self.out
+                .send((Instant::now() + self.delay, message.to_vec()))
+                .map_err(|_| Failure::PathLost)
+        }
+
+        fn receive(&self, timeout: Option<Duration>) -> Result<Option<Vec<u8>>, Failure> {
+            let incoming = self.incoming.lock().unwrap();
+            match incoming.recv_timeout(timeout.unwrap_or(Duration::from_secs(5))) {
+                Ok((due, message)) => {
+                    thread::sleep(due.saturating_duration_since(Instant::now()));
+                    Ok(Some(message))
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(Failure::Timeout),
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Ok(None),
+            }
+        }
+
+        fn close(&self) {}
+    }
+
+    fn slow_wires(delay: Duration) -> (SlowWire, SlowWire) {
+        let (a_out, b_in) = queue();
+        let (b_out, a_in) = queue();
+        let wire = |out, incoming| SlowWire {
+            out,
+            incoming: Mutex::new(incoming),
+            delay,
+        };
+        (wire(a_out, a_in), wire(b_out, b_in))
+    }
+
+    /// Runs both ends at once with a limit each.
+    fn both_with(
+        dialed_limits: Limits,
+        answered_limits: Limits,
+        dialed: impl FnOnce(&Mux<'_, Wire>) + Send,
+        answered: impl FnOnce(&Mux<'_, Wire>) + Send,
+    ) {
+        let (a, b) = wires();
+        thread::scope(|scope| {
+            scope.spawn(|| Mux::run(&a, Side::Dialed, dialed_limits, None, dialed));
+            Mux::run(&b, Side::Answered, answered_limits, None, answered);
+        });
+    }
+
+    #[test]
+    fn a_widened_stream_carries_max_window_in_flight_and_a_peer_that_never_grants_interoperates() {
+        // The sender knows nothing of grants and has the plain window; only the receiver widens.
+        let plain = Limits {
+            window: 1024,
+            ..Limits::default()
+        };
+        let wide = Limits {
+            window: 1024,
+            max_window: 8192,
+            ..Limits::default()
+        };
+        both_with(
+            plain,
+            wide,
+            |mux| {
+                let stream = mux.open("bulk").unwrap();
+                let signal = mux.open("signal").unwrap();
+                assert_eq!(stream.receive(WAIT).unwrap().unwrap(), b"ready");
+                for _ in 0..8 {
+                    stream.try_send(&[1; 1024]).unwrap();
+                }
+                assert_eq!(stream.try_send(&[1; 1024]), Err(Failure::NoProgress));
+                // Only now may the reader start, which is what gives credit back.
+                signal.send(b"go").unwrap();
+                // The other way the plain window is all there is, and it still flows as the reader reads.
+                for _ in 0..4 {
+                    assert_eq!(stream.receive(WAIT).unwrap().unwrap().len(), 1024);
+                }
+                assert_eq!(stream.end(), None);
+                stream.send(b"done").unwrap();
+            },
+            |mux| {
+                let incoming = accepted(mux);
+                let signal = accepted(mux);
+                assert_eq!(incoming.stream.window(), 1024);
+                assert_eq!(incoming.stream.grant(7168), Ok(8192));
+                assert_eq!(incoming.stream.window(), 8192);
+                incoming.stream.send(b"ready").unwrap();
+                assert_eq!(signal.stream.receive(WAIT).unwrap().unwrap(), b"go");
+                for _ in 0..8 {
+                    assert_eq!(incoming.stream.receive(WAIT).unwrap().unwrap().len(), 1024);
+                }
+                for _ in 0..4 {
+                    incoming.stream.send(&[2; 1024]).unwrap();
+                }
+                assert_eq!(incoming.stream.receive(WAIT).unwrap().unwrap(), b"done");
+            },
+        );
+    }
+
+    #[test]
+    fn a_widened_stream_is_not_broken_by_a_peer_that_uses_the_credit_and_one_that_ignores_it_is() {
+        let limits = Limits {
+            window: 8,
+            max_window: 24,
+            ..Limits::default()
+        };
+        against(limits, &[open(1), open(3), data(1, 8)], |mux, theirs| {
+            let first = accepted(mux);
+            let second = accepted(mux);
+            assert_eq!(first.stream.grant(16), Ok(24));
+            assert_eq!(
+                told(theirs),
+                Frame::Credit {
+                    stream: 1,
+                    bytes: 16
+                }
+            );
+            // Up to the widened window is fine, with nothing read.
+            theirs.out.send(data(1, 8).encode()).unwrap();
+            theirs.out.send(data(1, 8).encode()).unwrap();
+            theirs.out.send(data(3, 8).encode()).unwrap();
+            theirs.out.send(data(3, 1).encode()).unwrap();
+            // The stream that was not widened still holds its own window.
+            while second.stream.end().is_none() {
+                thread::sleep(Duration::from_millis(1));
+            }
+            assert_eq!(second.stream.receive(WAIT), Err(Failure::Protocol));
+            for _ in 0..3 {
+                assert_eq!(first.stream.receive(WAIT).unwrap().unwrap().len(), 8);
+            }
+            assert_eq!(first.stream.end(), None);
+        });
+    }
+
+    #[test]
+    fn a_grant_past_max_window_is_capped_and_one_that_adds_nothing_sends_nothing() {
+        let limits = Limits {
+            window: 1024,
+            max_window: 2048,
+            ..Limits::default()
+        };
+        against(limits, &[open(1)], |mux, theirs| {
+            let stream = accepted(mux).stream;
+            assert_eq!(stream.grant(u32::MAX), Ok(2048));
+            assert_eq!(
+                told(theirs),
+                Frame::Credit {
+                    stream: 1,
+                    bytes: 1024
+                }
+            );
+            assert_eq!(stream.grant(1), Ok(2048));
+            assert_eq!(stream.grant(0), Ok(2048));
+            // Nothing else was sent: the next thing is what this closing says.
+            stream.close();
+            assert!(matches!(told(theirs), Frame::Close { .. }));
+        });
+        // Without a max_window nothing widens.
+        against(Limits::default(), &[open(1)], |mux, _| {
+            let stream = accepted(mux).stream;
+            assert_eq!(stream.grant(1), Ok(Limits::default().window));
+        });
+        // A max_window below the window is the window.
+        let below = Limits {
+            window: 1024,
+            max_window: 16,
+            ..Limits::default()
+        };
+        against(below, &[open(1)], |mux, _| {
+            assert_eq!(accepted(mux).stream.grant(99), Ok(1024));
+        });
+    }
+
+    #[test]
+    fn a_grant_on_a_stream_that_has_ended_answers_how_it_ended() {
+        both(
+            Limits::default(),
+            |mux| {
+                let stream = mux.open("bulk").unwrap();
+                stream.close_with(CloseReason::Revoked, "gone");
+            },
+            |mux| {
+                let incoming = accepted(mux);
+                assert_eq!(incoming.stream.receive(WAIT), Err(Failure::Permission));
+                assert_eq!(incoming.stream.grant(1), Err(Failure::Permission));
+            },
+        );
+    }
+
+    #[test]
+    fn auto_window_grows_a_busy_stream_over_a_slow_link_and_not_an_idle_one() {
+        let limits = Limits {
+            window: 4096,
+            max_window: 1024 * 1024,
+            auto_window: true,
+            ..Limits::default()
+        };
+        let (a, b) = slow_wires(Duration::from_millis(50));
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                Mux::run(&a, Side::Dialed, limits, None, |mux| {
+                    let busy = mux.open("bulk").unwrap();
+                    let _idle = mux.open("idle").unwrap();
+                    for _ in 0..192 {
+                        busy.send(&[3; 2048]).unwrap();
+                    }
+                    assert_eq!(busy.receive(WAIT).unwrap().unwrap(), b"done");
+                });
+            });
+            Mux::run(&b, Side::Answered, limits, None, |mux| {
+                let busy = accepted(mux);
+                let idle = accepted(mux);
+                assert_eq!(busy.stream.window(), 4096);
+                let mut total = 0;
+                while total < 192 * 2048 {
+                    total += busy.stream.receive(WAIT).unwrap().unwrap().len();
+                }
+                assert!(busy.stream.window() > 4096, "{}", busy.stream.window());
+                assert!(busy.stream.window() <= 1024 * 1024);
+                assert_eq!(idle.stream.window(), 4096);
+                busy.stream.send(b"done").unwrap();
+            });
+        });
+    }
+
+    #[test]
+    fn without_auto_window_no_ping_is_sent_and_a_stream_stays_as_wide_as_it_began() {
+        let limits = Limits {
+            window: 4096,
+            max_window: 1024 * 1024,
+            ..Limits::default()
+        };
+        against(limits, &[open(1), data(1, 100)], |mux, theirs| {
+            let incoming = accepted(mux);
+            assert_eq!(incoming.stream.receive(WAIT).unwrap().unwrap().len(), 100);
+            assert_eq!(
+                told(theirs),
+                Frame::Credit {
+                    stream: 1,
+                    bytes: 100
+                }
+            );
+            assert_eq!(incoming.stream.window(), 4096);
+        });
+    }
+
+    #[test]
+    fn a_probe_that_saw_most_of_a_window_doubles_it_once_the_pong_comes_and_never_past_the_ceiling()
+    {
+        let limits = Limits {
+            window: 90,
+            max_window: 200,
+            auto_window: true,
+            ..Limits::default()
+        };
+        against(
+            limits,
+            &[open(1), open(3), data(1, 61), data(3, 60)],
+            |mux, theirs| {
+                let one = accepted(mux);
+                let three = accepted(mux);
+                // The data started a probe: one ping, whatever else arrives meanwhile.
+                assert_eq!(told(theirs), Frame::Ping);
+                theirs.out.send(Frame::Pong.encode()).unwrap();
+                // 61 of 90 is over two thirds, 60 is not.
+                assert_eq!(
+                    told(theirs),
+                    Frame::Credit {
+                        stream: 1,
+                        bytes: 90
+                    }
+                );
+                assert_eq!(one.stream.window(), 180);
+                assert_eq!(three.stream.window(), 90);
+                // The next data starts the next probe, and 180 of 200 widens only to the ceiling.
+                theirs.out.send(data(1, 150).encode()).unwrap();
+                assert_eq!(told(theirs), Frame::Ping);
+                theirs.out.send(Frame::Pong.encode()).unwrap();
+                assert_eq!(
+                    told(theirs),
+                    Frame::Credit {
+                        stream: 1,
+                        bytes: 20
+                    }
+                );
+                assert_eq!(one.stream.window(), 200);
+            },
+        );
     }
 
     /// A hostile peer, by frames, against a real mux.
