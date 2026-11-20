@@ -30,6 +30,8 @@ const POLL: Duration = Duration::from_millis(100);
 const CONTROL_WAIT: Duration = Duration::from_secs(30);
 /// How long one part of a message already begun may wait on a full link, since the rest of it cannot be taken back.
 const PART_WAIT: Duration = Duration::from_secs(30);
+/// What a stream is told when its link's channel reports that the peer's access was taken away.
+const REVOKED: &str = "this peer may no longer use this link";
 /// The longest protocol token, which an `OPEN` carries.
 pub const MAX_PROTOCOL: usize = 64;
 /// The longest reason a `CLOSE` carries, in bytes.
@@ -751,7 +753,37 @@ impl<C: Channel> Reader<'_, '_, C> {
                 }
                 Ok(None) => return self.ended(),
                 Err(Failure::Timeout) => {}
-                Err(failure) => return self.shared.lost(failure),
+                Err(failure) => {
+                    if failure == Failure::Permission {
+                        self.revoke_open();
+                    }
+                    return self.shared.lost(failure);
+                }
+            }
+        }
+    }
+
+    /// A channel that answers [`Failure::Permission`] from `receive` is saying its peer may no longer be here, as a sealed channel
+    /// does when its check fails. Each stream still open is closed [`CloseReason::Revoked`] before the link is lost, so the peer
+    /// hears why and not only that the link went.
+    fn revoke_open(&self) {
+        let mut open: Vec<u32> = self
+            .shared
+            .lock()
+            .streams
+            .iter()
+            .filter(|(_, entry)| entry.ended.is_none())
+            .map(|(&id, _)| id)
+            .collect();
+        open.sort_unstable();
+        for stream in open {
+            let frame = Frame::Close {
+                stream,
+                reason: CloseReason::Revoked,
+                text: REVOKED.to_owned(),
+            };
+            if send_within(self.channel, &frame.encode(), self.shared.limits.send_wait).is_err() {
+                return;
             }
         }
     }
@@ -1435,6 +1467,64 @@ mod tests {
                 thread::sleep(Duration::from_millis(100));
             },
         );
+    }
+
+    /// A channel that, once told, answers `Permission` to every receive, as a sealed channel does for a peer whose access was taken
+    /// away, and goes on carrying what is sent.
+    struct Revocable<'a> {
+        wire: &'a Wire,
+        revoked: AtomicBool,
+    }
+
+    impl Channel for Revocable<'_> {
+        fn send(&self, message: &[u8]) -> Result<(), Failure> {
+            self.wire.send(message)
+        }
+
+        fn receive(&self, timeout: Option<Duration>) -> Result<Option<Vec<u8>>, Failure> {
+            if self.revoked.load(Ordering::SeqCst) {
+                return Err(Failure::Permission);
+            }
+            self.wire
+                .receive(timeout.map(|limit| limit.min(Duration::from_millis(20))))
+        }
+
+        fn close(&self) {}
+    }
+
+    #[test]
+    fn a_link_whose_channel_answers_permission_closes_each_stream_revoked_first() {
+        let (a, b) = wires();
+        let b = Revocable {
+            wire: &b,
+            revoked: AtomicBool::new(false),
+        };
+        let (told, hear) = queue::<()>();
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                Mux::run(&a, Side::Dialed, Limits::default(), None, |mux| {
+                    let running = mux.open("bulk").unwrap();
+                    let idle = mux.open("idle").unwrap();
+                    told.send(()).unwrap();
+                    // The link was cut by the peer's check, not by the peer's stream: still, each stream is told why.
+                    assert_eq!(running.receive(WAIT), Err(Failure::Permission));
+                    assert!(matches!(running.end(), Some(StreamEnd::Revoked(_))));
+                    assert_eq!(idle.receive(WAIT), Err(Failure::Permission));
+                    assert!(matches!(idle.end(), Some(StreamEnd::Revoked(_))));
+                });
+            });
+            Mux::run(&b, Side::Answered, Limits::default(), None, |mux| {
+                let _first = accepted(mux);
+                let _second = accepted(mux);
+                hear.recv_timeout(Duration::from_secs(5)).unwrap();
+                b.revoked.store(true, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(300));
+                assert!(matches!(
+                    mux.link_state(),
+                    LinkState::Lost(Failure::Permission, _)
+                ));
+            });
+        });
     }
 
     #[test]

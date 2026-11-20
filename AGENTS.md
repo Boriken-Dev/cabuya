@@ -53,6 +53,7 @@ pub fn Stream::finished_by_peer(&self) -> bool                            // the
 - `Limits::heartbeat` is off by default, and a zero interval or zero misses turns it off too. It loses a link only when nothing at all is heard, so a stream silent for hours is fine. `link_state` says when a link went; what that means is the host's to decide.
 - `Limits::window` is the credit both sides assume at a stream's start (not negotiated), so keep it the same on both. A receiver that wants more on one stream grants it with `Stream::grant`: credit past what was read is already accepted by every sender (Rust, Dart, JavaScript, `coqui-agentic-peer`), so no peer needs to change. `max_window` bounds it (below `window` means `window`, so nothing grows by default). `auto_window` (off) grows a stream by itself: while data arrives it sends one `ping` at a time, and a stream that received over two thirds of its window before the `pong` doubles, up to `max_window`; it never shrinks. A grown stream can hold `max_window` unread, so set it to what each stream may cost in memory. Dart and JavaScript have `grant` and `maxWindow` (`stream.window`), not `auto_window`.
 - What one stream does wrong ends that stream. What no peer may send ends the link.
+- A channel whose `receive` answers `Failure::Permission` (what `Sealed::with_check` does) says its peer may no longer be on the link: the mux closes every stream still open with `CloseReason::Revoked` before the link is lost, so the peer reads `StreamEnd::Revoked` and not a lost link. The owner closes the channel afterwards.
 - A proof admits a peer to the link and grants no protocol. Deciding who may open what is the caller's: `accept`, then serve, or `close_with(CloseReason::Refused, why)`. `metadata` is kept nowhere, and is not a credential of the link's.
 
 ## `coqui_link::link`
@@ -139,7 +140,7 @@ pub fn prove_out<M: coqui_peer::Method, C: Channel>(method: &M, channel: &C, lim
 pub struct Sealed<'a, C>;   // impl Channel
 pub fn Sealed::new(channel: &'a C, session: impl Into<Session>) -> Sealed<'a, C>   // a session of either method
 pub const fn Sealed::method(&self) -> Method
-pub fn Sealed::with_check(self, allowed: impl Fn() -> bool + Send + Sync + 'a) -> Sealed<'a, C>   // a check that cannot tell must say no
+pub fn Sealed::with_check(self, allowed: impl Fn() -> bool + Send + Sync + 'a) -> Sealed<'a, C>   // a check that cannot tell must say no; a failed check answers `Permission` from `receive` once with the channel still open, so a mux tells each stream `Revoked`, and closes it on the next call
 pub const fn Sealed::with_check_every(self, recheck: Duration) -> Sealed<'a, C>                    // a second unless set
 ```
 
