@@ -9,7 +9,7 @@ use core::str::FromStr;
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use coqui_builder::NonDefault;
@@ -281,8 +281,12 @@ pub fn create_identity(path: &Path, method: Method) -> Result<PeerId, Error> {
     Ok(identity.peer_id())
 }
 
+/// What the host is asked about a proven key: the key, whether this side answered the connection, and the connection's source
+/// when the host gave one. It is `true` to admit.
+pub type Asking = dyn Fn(&KeyMaterial, bool, Option<SocketAddr>) -> bool + Send + Sync;
+
 /// Whom a proof admits, decided after the peer proved its key and never before.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub enum Trust {
     /// These ids, fixed when the proof is built. An empty set admits nobody.
@@ -290,6 +294,20 @@ pub enum Trust {
     /// The keys a store accepts, of the proof's own method, read at each handshake. A responder records a proved stranger as
     /// waiting.
     Store(TrustStore),
+    /// The host decides, at each handshake and after the proof, from the proven key, whether this side answered, and the
+    /// connection's source. It is asked once, never for a key whose proof failed, and records nothing itself: a host that
+    /// queues a refused stranger does it in its own closure. Build it with [`Trust::asked`].
+    Asked(Arc<Asking>),
+}
+
+impl fmt::Debug for Trust {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pinned(ids) => f.debug_tuple("Pinned").field(ids).finish(),
+            Self::Store(store) => f.debug_tuple("Store").field(store).finish(),
+            Self::Asked(_) => f.debug_tuple("Asked").field(&"..").finish(),
+        }
+    }
 }
 
 impl Trust {
@@ -298,10 +316,21 @@ impl Trust {
         Self::Pinned(ids.into_iter().collect())
     }
 
+    /// Admits what `admit` answers `true` to: it gets the proven key, whether this side answered the connection and that
+    /// connection's source. Under either method it runs once per handshake, after the proof held.
+    pub fn asked(
+        admit: impl Fn(&KeyMaterial, bool, Option<SocketAddr>) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        Self::Asked(Arc::new(admit))
+    }
+
     fn webcrypto(self) -> webcrypto::Trust {
         match self {
             Self::Pinned(ids) => webcrypto::Trust::Pinned(ids),
             Self::Store(store) => webcrypto::Trust::Store(store),
+            Self::Asked(admit) => {
+                webcrypto::Trust::asked(move |key, answering, source| admit(key, answering, source))
+            }
         }
     }
 
@@ -309,6 +338,9 @@ impl Trust {
         match self {
             Self::Pinned(ids) => noise::Trust::Pinned(ids),
             Self::Store(store) => noise::Trust::Store(store),
+            Self::Asked(admit) => {
+                noise::Trust::asked(move |key, answering, source| admit(key, answering, source))
+            }
         }
     }
 }

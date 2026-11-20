@@ -26,9 +26,9 @@ coqui-transport = { git = "https://github.com/Boriken-Dev/coqui-transport", rev 
 serde_json = "1"
 coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "984db3d54b73de10c7892b06fe269a259de2d1c5", optional = true }
 coqui-builder = { git = "https://github.com/Boriken-Dev/coqui-builder", rev = "c1875f8276bd6366c38e9133fdb1181a0ffbaaad", optional = true }
-coqui-peer-webcrypto = { git = "https://github.com/Boriken-Dev/coqui-peer-webcrypto", rev = "9146f55dd9fb9be8d6d96f43e17bc7a057ba0681", features = ["pin"], optional = true }
+coqui-peer-webcrypto = { git = "https://github.com/Boriken-Dev/coqui-peer-webcrypto", rev = "7544cf9c026da808dc940bcb56a0b3d5d78bef2f", features = ["pin"], optional = true }
 # The Noise method, with `pin` for PIN pairing inside its session.
-coqui-peer-noise = { git = "https://github.com/Boriken-Dev/coqui-peer-noise", rev = "3a5b30689780a6e6291af565ff6abbaae515973c", features = ["pin"], optional = true }
+coqui-peer-noise = { git = "https://github.com/Boriken-Dev/coqui-peer-noise", rev = "518dd9f5693161d74af7b2ddb27ac0c4061b35b9", features = ["pin"], optional = true }
 # Ending a connection with a reset, which std cannot do.
 socket2 = { version = "0.6", optional = true }
 
@@ -61,3 +61,7 @@ required-features = ["sealed"]
 [[test]]
 name = "interop"
 required-features = ["sealed", "forward"]
+
+[[test]]
+name = "asked"
+required-features = ["sealed"]
