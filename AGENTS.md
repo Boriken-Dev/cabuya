@@ -16,7 +16,7 @@ pub const MAX_PROTOCOL: usize = 64;
 pub fn valid_protocol(protocol: &str) -> bool      // printable ASCII, no space, comma or equals; goes in a DNS-SD record as it is
 pub fn starts_mux(first_message: &[u8]) -> bool    // true for a link with streams; JSON never starts with a zero byte
 pub const MAX_REASON: usize = 256;
-pub struct Limits { pub max_streams: usize, pub max_per_protocol: usize, pub window: u32, pub max_window: u32, pub auto_window: bool, pub max_message: usize, pub max_frame: usize, pub max_metadata: usize, pub max_pending_opens: usize, pub max_opens_per_minute: u32, pub send_wait: Duration, pub heartbeat: Option<Heartbeat> }  // non_exhaustive, Default
+pub struct Limits { pub max_streams: usize, pub max_per_protocol: usize, pub window: u32, pub max_window: u32, pub auto_window: bool, pub max_message: usize, pub max_frame: usize, pub max_metadata: usize, pub max_pending_opens: usize, pub max_opens_per_minute: u32, pub send_wait: Duration, pub open_wait: Duration, pub heartbeat: Option<Heartbeat> }  // non_exhaustive, Default
 pub struct Heartbeat { pub interval: Duration, pub misses: u32 }    // non_exhaustive; Heartbeat::new(interval, misses)
 pub enum Side { Dialed, Answered }
 pub enum Frame { Open { stream, protocol, metadata }, Data { stream, body }, More { stream, body }, Credit { stream, bytes }, Finish { stream }, Close { stream, reason, text }, Ping, Pong }  // non_exhaustive
@@ -46,6 +46,7 @@ pub fn Stream::finished_by_peer(&self) -> bool                            // the
 
 - `Mux::run` reads the link for as long as `body` runs, on a thread of its own, and does not close the channel. `first` is a message already read, as when `starts_mux` looked at it.
 - `Stream::send` waits up to `send_wait` for credit, then answers `Failure::NoProgress`, uncharged, so a caller may try again. A stream refused, superseded or revoked answers `Failure::Permission`, one that broke its bounds `Failure::Protocol`, and a lost link the link's own failure; `Stream::end` says which.
+- `Mux::open_with` (and `open`) waits up to `open_wait` (default 250 ms; zero refuses at once) for a stream to end when this side already holds `max_streams`, or `max_per_protocol` of that protocol, then answers `Failure::NoProgress`. Rust only: Dart and JavaScript refuse at once. Opens keep their order while one waits.
 - `receive` answers `None` for a peer that called `finish` and for a stream or link closed in order alike. `finished_by_peer` tells them apart: `false` after a `None` means what arrived may be part of what the peer meant to send. In JavaScript it is `stream.finishedByPeer`, in Dart `MuxStream.finishedByPeer`.
 - Opens leave in id order whatever the thread count, and an open whose frame could not be sent leaves nothing in the stream table. In JavaScript and Dart `open` is one at a time for the same reason.
 - A long message is cut into frames of `max_frame`, so another stream's message passes between its parts. Only the first part can be taken back: past that, a link that will not take the rest is lost.

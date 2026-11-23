@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `Limits::open_wait` (default 250 ms): `Mux::open` and `open_with` wait that long for a stream to end when this side holds `max_streams`, or `max_per_protocol` of that protocol, before answering `NoProgress`, so a caller that opens one short stream after another is not refused because its own closes are still in flight. Zero refuses at once, as before. Rust only; no frame changes.
 - `pairing::answer`, `join_shared`, `MARKER`, `starts_pairing`, `Answered`, `Unanswered` and `PairingHost`: one responder for a listener that takes proofs and pairings. A pairing and a proof begin with the same handshake message under both methods, so a joiner of `join_shared` sends `MARKER` first and `answer` reads the first message and runs `respond` or `prove` by it. `join`, `respond` and `prove` are unchanged.
 - `pairing::desk_with(options, limits)`: a desk with the PIN's lifetime, attempts, alphabet and the pending-run bounds set; `desk()` is `desk_with` of the defaults.
 - A channel whose `receive` answers `Failure::Permission`, as a failed `Sealed::with_check` now does without closing the channel, makes the mux close every open stream with `CloseReason::Revoked` before the link is lost, so a peer revoked at the link reads `Revoked` and not a lost link. The owner closes the channel after the mux ends. Rust only: no frame changes.
