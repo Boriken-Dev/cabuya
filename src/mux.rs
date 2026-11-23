@@ -88,6 +88,10 @@ pub struct Limits {
     pub max_opens_per_minute: u32,
     /// How long a send waits for credit before answering [`Failure::NoProgress`].
     pub send_wait: Duration,
+    /// How long an open waits for a stream to end when this side holds `max_streams`, or `max_per_protocol` of that protocol,
+    /// before answering [`Failure::NoProgress`]. A stream closed here leaves the count at once, but a caller that opens one
+    /// after another can be ahead of the ends its own threads are still making; zero refuses at once.
+    pub open_wait: Duration,
     /// None sends nothing and notices only what the transport notices.
     pub heartbeat: Option<Heartbeat>,
 }
@@ -117,6 +121,7 @@ impl Default for Limits {
             max_pending_opens: 8,
             max_opens_per_minute: 600,
             send_wait: Duration::from_millis(250),
+            open_wait: Duration::from_millis(250),
             heartbeat: None,
         }
     }
@@ -561,8 +566,8 @@ impl<'c, C: Channel> Mux<'c, C> {
     ///
     /// # Errors
     ///
-    /// [`Failure::Protocol`] for a malformed token or too much metadata, [`Failure::NoProgress`] past a limit on streams, and the
-    /// link's own failure.
+    /// [`Failure::Protocol`] for a malformed token or too much metadata, [`Failure::NoProgress`] when no stream ended within
+    /// `open_wait` of this side holding as many as it allows, and the link's own failure.
     pub fn open_with(&self, protocol: &str, metadata: &[u8]) -> Result<Stream<'c, C>, Failure> {
         let limits = &self.shared.limits;
         if !valid_protocol(protocol) || metadata.len() > limits.max_metadata {
@@ -574,18 +579,24 @@ impl<'c, C: Channel> Mux<'c, C> {
             .opening
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        let until = Instant::now() + limits.open_wait;
         let stream = {
             let mut state = self.shared.lock();
-            if let Some(failure) = state.link {
-                return Err(failure);
-            }
-            let same = state
-                .streams
-                .values()
-                .filter(|held| held.protocol == protocol)
-                .count();
-            if state.streams.len() >= limits.max_streams || same >= limits.max_per_protocol {
-                return Err(Failure::NoProgress);
+            loop {
+                if let Some(failure) = state.link {
+                    return Err(failure);
+                }
+                let same = state
+                    .streams
+                    .values()
+                    .filter(|held| held.protocol == protocol)
+                    .count();
+                if state.streams.len() < limits.max_streams && same < limits.max_per_protocol {
+                    break;
+                }
+                // Holding `opening`, so the opens behind this one keep their order.
+                state =
+                    wait(&self.shared.changed, state, Some(until)).ok_or(Failure::NoProgress)?;
             }
             let stream = state.next_stream;
             state.next_stream = stream.checked_add(2).ok_or(Failure::NoProgress)?;
@@ -1717,6 +1728,65 @@ mod tests {
                     assert_eq!(mux.link_state(), LinkState::Up);
                 });
             });
+        }
+    }
+
+    #[test]
+    fn an_open_at_the_limit_waits_for_a_stream_to_end() {
+        let limits = Limits {
+            max_streams: 1,
+            open_wait: Duration::from_secs(30),
+            ..Limits::default()
+        };
+        both(
+            limits,
+            |mux| {
+                let first = mux.open("x").unwrap();
+                thread::scope(|scope| {
+                    scope.spawn(move || {
+                        thread::sleep(Duration::from_millis(150));
+                        drop(first);
+                    });
+                    // Without the wait this is `NoProgress` at once: the only slot is held until the thread above lets go.
+                    let began = Instant::now();
+                    let second = mux.open("x").unwrap();
+                    assert!(began.elapsed() >= Duration::from_millis(100));
+                    drop(second);
+                });
+            },
+            |mux| {
+                accepted(mux);
+                accepted(mux);
+            },
+        );
+    }
+
+    #[test]
+    fn an_open_at_the_limit_gives_up_after_open_wait() {
+        for (wait, least) in [
+            (Duration::ZERO, Duration::ZERO),
+            (Duration::from_millis(150), Duration::from_millis(150)),
+        ] {
+            let limits = Limits {
+                max_per_protocol: 1,
+                open_wait: wait,
+                ..Limits::default()
+            };
+            both(
+                limits,
+                |mux| {
+                    let _held = mux.open("x").unwrap();
+                    let began = Instant::now();
+                    assert_eq!(mux.open("x").err(), Some(Failure::NoProgress));
+                    assert!(began.elapsed() >= least);
+                    // Another protocol is not held up by it.
+                    assert!(mux.open("y").is_ok());
+                },
+                |mux| {
+                    accepted(mux);
+                    accepted(mux);
+                },
+            );
         }
     }
 
