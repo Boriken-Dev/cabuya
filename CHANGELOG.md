@@ -23,3 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `auth` and `pairing` (feature `sealed`): Noise and WebCrypto identities, proof, the sealed channel, and PIN pairing over any channel.
 - `forward` (feature `forward`): `tcp/1`, one TCP connection per stream in either direction, each target its own grant.
 - The wire is the one `coqui-agentic-peer` speaks (`link/1`, `tcp/1`, every frame byte), so a link of either library talks to a link of the other; `tests/interop.rs` runs both ends under both proof methods.
+
+### Changed
+
+- The project is renamed from `coqui-link` to `cabuya`: the repository is `Boriken-Dev/cabuya`, the crate and the JavaScript package are `cabuya` (`cabuya::` in Rust), the Dart package is `cabuya`, and `pairing::MARKER` is `cabuya/pairing/1`. A joiner and a listener of different names do not recognise each other's marker, so both sides move together. Frames, protocol names (`link/1`, `tcp/1`) and the vectors are unchanged. The test environment variables are `CABUYA_TEST_NODE`, `CABUYA_TEST_NOISE` and `CABUYA_SOURCE_VECTORS`.

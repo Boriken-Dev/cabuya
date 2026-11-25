@@ -1,6 +1,6 @@
-# `coqui-link` — API header
+# `cabuya` — API header
 
-Header-file-style reference for the `coqui-link` crate: every public item with its signature, contract and gotchas, so the crate can be used without reading its source. It ships inside the package and is self-contained. Development documentation lives with the source at <https://github.com/Boriken-Dev/coqui-link>.
+Header-file-style reference for the `cabuya` crate: every public item with its signature, contract and gotchas, so the crate can be used without reading its source. It ships inside the package and is self-contained. Development documentation lives with the source at <https://github.com/Boriken-Dev/cabuya>.
 
 | Feature | Adds | Default |
 | --- | --- | --- |
@@ -9,7 +9,7 @@ Header-file-style reference for the `coqui-link` crate: every public item with i
 
 MSRV Rust 1.89. Version `0.0.0-alpha.0`, not published. A default build depends on `coqui-transport` (by revision, no default features; its `Channel` and `Failure` are what every link and stream is generic over) and `serde_json`. Nothing is re-exported at the root but `Error`; the public modules are `mux`, `link` and `peers`, with `auth` and `pairing` under `sealed` and `forward` under `forward`. No `unsafe` code.
 
-## `coqui_link::mux`
+## `cabuya::mux`
 
 ```rust
 pub const MAX_PROTOCOL: usize = 64;
@@ -57,7 +57,7 @@ pub fn Stream::finished_by_peer(&self) -> bool                            // the
 - A channel whose `receive` answers `Failure::Permission` (what `Sealed::with_check` does) says its peer may no longer be on the link: the mux closes every stream still open with `CloseReason::Revoked` before the link is lost, so the peer reads `StreamEnd::Revoked` and not a lost link. The owner closes the channel afterwards.
 - A proof admits a peer to the link and grants no protocol. Deciding who may open what is the caller's: `accept`, then serve, or `close_with(CloseReason::Refused, why)`. `metadata` is kept nowhere, and is not a credential of the link's.
 
-## `coqui_link::link`
+## `cabuya::link`
 
 ```rust
 pub const LINK_PROTOCOL: &str = "link/1";
@@ -80,7 +80,7 @@ pub struct Prefilled<'a, C>;  // impl Channel; Prefilled::new(channel, first)
 
 `serve` runs one handler thread per stream, so a slow service holds up nothing, up to `Limits::max_streams`. Every open is decided against `PeerStore::get`, and every running stream again each `recheck`. A store error refuses, so nothing fails open. A taken-away grant closes the stream with `CloseReason::Revoked`, whose reason reaches the peer first. Call it after the proof, and close `channel` yourself afterwards.
 
-## `coqui_link::peers`
+## `cabuya::peers`
 
 ```rust
 pub struct PeerRecord { pub peer: String, pub claims: BTreeMap<String, String>, pub grants: BTreeSet<String> }  // non_exhaustive, Default
@@ -95,7 +95,7 @@ pub struct NoEvents;                                 // impl Events
 
 A host keeps peers in its own registry by implementing `PeerStore`, with no file or prompt involved. `claims` are set by the host and never interpreted here: derive who is speaking from them, not from anything a peer says. Only keys, peers and grants need to survive a restart.
 
-## `coqui_link::auth` (feature `sealed`)
+## `cabuya::auth` (feature `sealed`)
 
 ```rust
 pub const MAX_PROOF_MESSAGE: usize = 3072;
@@ -151,7 +151,7 @@ An endpoint proves by one method, chosen when it is built: nothing on the wire n
 
 `create_identity` never replaces a file. `prove` answers and `prove_out` connects, within `limit`, refusing a message over 3072 bytes, and set the channel's limit to `max_message` before the proof's last message goes out: size it with `Method::record_length`. `Sealed::set_max_message(n)` sets the channel's to its method's `record_length(n)`. Under Noise that is the worst case at any key limit the sender runs: 19 bytes per part of 65,518 bytes, and 19 more per part for a change of key in front of it (9,766 at 16 MiB), since a receiver cannot know the sender's limit.
 
-## `coqui_link::pairing` (feature `sealed`)
+## `cabuya::pairing` (feature `sealed`)
 
 ```rust
 pub fn desk() -> Result<PairingDesk, Error>   // PIN runs only, coqui-peer's defaults
@@ -169,7 +169,7 @@ pub fn answer<M: coqui_peer::Method, C: Channel>(channel: &C, method: &M, max_me
 
 A pairing and a proof begin with the same handshake message under both methods, so one listener tells them apart only by `MARKER`, sent first by `join_shared`; an unmarked `join` is for a listener that only pairs. A desk with no PIN shown refuses a joiner as one with none shown, and a wrong guess burns the PIN. PIN pairing over any channel in binary frames, with the PIN shown by the responder, by `identity`'s method: a joiner of the other method fails the handshake, and the responder's error names it. The key stored names its method, so the two then connect by it. A refusal's error says which: a wrong PIN, an expired one, a mode not offered. Under Noise, a joiner that proves itself and then says nothing is sent away as expired within `limit`, or Noise's own minute if that is sooner.
 
-## `coqui_link::forward` (feature `forward`)
+## `cabuya::forward` (feature `forward`)
 
 `tcp/1`: one TCP connection per stream, in either direction. The widest capability there is, so a peer needs `tcp/1` and a grant `tcp/1:RULE` that matches the target: a token naming one target (an exact rule, as before) or a `Rule` pattern the operator wrote. A refusal happens before anything connects, and removing either grant ends running streams within `Options::recheck`.
 
@@ -206,11 +206,11 @@ Gotchas: whoever can connect to a `listen`er gets what this peer was granted, so
 
 ## Errors
 
-`coqui_link::Error` (`#[non_exhaustive]`): `Channel(Failure)`, `Proof(String)`, `Identity(String)` and, with `sealed`, `OtherMethod { peer: Method, ours: Method }` (a responder seeing the other method's first message: report it as a method mismatch, never as a key to accept). A message never quotes a key file.
+`cabuya::Error` (`#[non_exhaustive]`): `Channel(Failure)`, `Proof(String)`, `Identity(String)` and, with `sealed`, `OtherMethod { peer: Method, ours: Method }` (a responder seeing the other method's first message: report it as a method mismatch, never as a key to accept). A message never quotes a key file.
 
 ## Gotchas
 
 - A frame adds 5 bytes, so the link's own limit has to be at least `max_frame + 5`. `Mux` blocks a thread: on Tokio, run it on `spawn_blocking`.
 - A browser takes a self-signed certificate only for WebTransport with `serverCertificateHashes`.
 - A key file's permissions are set only on Unix; elsewhere it takes its directory's. Nothing checks them on reading.
-- A link of `coqui-link` and one of `coqui-agentic-peer` talk to each other: the protocol names (`link/1`, `tcp/1`) and every frame byte are the same.
+- A link of `cabuya` and one of `coqui-agentic-peer` talk to each other: the protocol names (`link/1`, `tcp/1`) and every frame byte are the same.

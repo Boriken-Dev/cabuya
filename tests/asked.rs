@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use coqui_link::auth::{Identity, Method, Proof, Trust, prove, prove_out};
+use cabuya::auth::{Identity, Method, Proof, Trust, prove, prove_out};
 use coqui_peer::KeyMaterial;
 use coqui_transport::{Channel, Failure};
 

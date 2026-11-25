@@ -209,7 +209,7 @@ macro_rules! stack {
     };
 }
 
-stack!(link_side, coqui_link);
+stack!(link_side, cabuya);
 stack!(peer_side, coqui_agentic_peer);
 
 /// One run of a link: `dial` and `answer` are each a different library's side.
@@ -281,8 +281,8 @@ fn agentic_peer_dials_and_this_crate_answers_under_each_method() {
 #[test]
 fn endpoints_of_different_methods_do_not_prove_in_either_direction() {
     let _deadline = common::within(90);
+    use cabuya::auth as ours;
     use coqui_agentic_peer::auth as theirs;
-    use coqui_link::auth as ours;
 
     for (ours_noise, theirs_noise) in [(true, false), (false, true)] {
         let method = |noise| {

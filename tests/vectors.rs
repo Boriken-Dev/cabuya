@@ -31,7 +31,7 @@ fn every_valid_vector_round_trips_in_this_crate_and_in_coqui_agentic_peer() {
     let valid = vectors("frames");
     assert!(!valid.is_empty());
     for (name, bytes) in &valid {
-        let ours = coqui_link::mux::Frame::decode(bytes).unwrap_or_else(|| panic!("{name}"));
+        let ours = cabuya::mux::Frame::decode(bytes).unwrap_or_else(|| panic!("{name}"));
         assert_eq!(&ours.encode(), bytes, "{name}");
         let theirs =
             coqui_agentic_peer::mux::Frame::decode(bytes).unwrap_or_else(|| panic!("{name}"));
@@ -44,7 +44,7 @@ fn every_invalid_vector_is_refused_by_both() {
     let invalid = vectors("invalid");
     assert!(!invalid.is_empty());
     for (name, bytes) in &invalid {
-        assert!(coqui_link::mux::Frame::decode(bytes).is_none(), "{name}");
+        assert!(cabuya::mux::Frame::decode(bytes).is_none(), "{name}");
         assert!(
             coqui_agentic_peer::mux::Frame::decode(bytes).is_none(),
             "{name}"
@@ -52,11 +52,11 @@ fn every_invalid_vector_is_refused_by_both() {
     }
 }
 
-/// With `COQUI_LINK_SOURCE_VECTORS` naming the other library's `vectors/mux.json`, the two files are the same bytes.
+/// With `CABUYA_SOURCE_VECTORS` naming the other library's `vectors/mux.json`, the two files are the same bytes.
 #[test]
 fn the_vectors_are_byte_identical_to_the_other_librarys() {
-    let Some(path) = std::env::var_os("COQUI_LINK_SOURCE_VECTORS") else {
-        eprintln!("SKIPPED: COQUI_LINK_SOURCE_VECTORS names no file");
+    let Some(path) = std::env::var_os("CABUYA_SOURCE_VECTORS") else {
+        eprintln!("SKIPPED: CABUYA_SOURCE_VECTORS names no file");
         return;
     };
     assert_eq!(std::fs::read(path).unwrap(), VECTORS.as_bytes());

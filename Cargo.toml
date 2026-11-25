@@ -1,12 +1,12 @@
 [package]
-name = "coqui-link"
+name = "cabuya"
 description = "A proven link between two peers, and named streams over it: any protocol, no agent library"
 version = "0.0.0-alpha.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MPL-2.0"
-repository = "https://github.com/Boriken-Dev/coqui-link"
-homepage = "https://boriken-dev.github.io/coqui-link/"
+repository = "https://github.com/Boriken-Dev/cabuya"
+homepage = "https://boriken-dev.github.io/cabuya/"
 readme = "README.md"
 keywords = ["peer", "mux", "streams", "noise", "pairing"]
 categories = ["network-programming"]

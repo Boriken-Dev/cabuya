@@ -7,7 +7,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:coqui_link/coqui_link.dart';
+import 'package:cabuya/cabuya.dart';
 import 'package:test/test.dart';
 
 Uint8List _unhex(String text) => Uint8List.fromList([

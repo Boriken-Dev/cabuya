@@ -12,9 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use coqui_link::Error;
-use coqui_link::auth::{Identity, Method, Proof, Sealed, Trust, prove, prove_out};
-use coqui_link::pairing;
+use cabuya::Error;
+use cabuya::auth::{Identity, Method, Proof, Sealed, Trust, prove, prove_out};
+use cabuya::pairing;
 use coqui_peer::TrustStore;
 use coqui_transport::{Channel, Failure};
 
@@ -65,7 +65,7 @@ struct Dir(PathBuf);
 impl Dir {
     fn new(name: &str) -> Self {
         let dir =
-            std::env::temp_dir().join(format!("coqui-link-pairing-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("cabuya-pairing-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         Self(dir)
@@ -300,8 +300,8 @@ fn start_joiner(node: &Path, module: &Path, mode: &str) -> (Child, Arc<Frames>) 
 }
 
 fn node() -> Option<PathBuf> {
-    let found = std::env::var_os("COQUI_LINK_TEST_NODE")
-        .map_or_else(|| PathBuf::from("node"), PathBuf::from);
+    let found =
+        std::env::var_os("CABUYA_TEST_NODE").map_or_else(|| PathBuf::from("node"), PathBuf::from);
     let version = Command::new(&found).arg("--version").output().ok()?;
     let text = String::from_utf8(version.stdout).ok()?;
     let major: u32 = text
@@ -315,13 +315,13 @@ fn node() -> Option<PathBuf> {
 }
 
 fn noise_module() -> Option<(PathBuf, PathBuf)> {
-    let module = std::env::var_os("COQUI_LINK_TEST_NOISE").map(PathBuf::from);
+    let module = std::env::var_os("CABUYA_TEST_NOISE").map(PathBuf::from);
     match (node(), module) {
         (Some(node), Some(module)) if module.exists() => Some((node, module)),
         (_, module) => {
             assert!(module.is_none(), "a module was named and could not be used");
             eprintln!(
-                "SKIPPED: needs Node 22 or later and COQUI_LINK_TEST_NOISE naming coqui-peer-noise's bindings/js/coqui-peer-noise/src/index.mjs"
+                "SKIPPED: needs Node 22 or later and CABUYA_TEST_NOISE naming coqui-peer-noise's bindings/js/coqui-peer-noise/src/index.mjs"
             );
             None
         }

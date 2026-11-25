@@ -10,9 +10,9 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel as queue};
 use std::thread;
 use std::time::Duration;
 
-use coqui_link::Error;
-use coqui_link::auth::{Identity, Method, Proof, Sealed, Trust, prove_out};
-use coqui_link::pairing::{self, Answered, PairingHost};
+use cabuya::Error;
+use cabuya::auth::{Identity, Method, Proof, Sealed, Trust, prove_out};
+use cabuya::pairing::{self, Answered, PairingHost};
 use coqui_peer::TrustStore;
 use coqui_peer::pair::{CodeAlphabet, DeskLimits, PairingDesk, PairingOptions, Pin};
 use coqui_transport::{Channel, Failure};
@@ -62,8 +62,7 @@ struct Dir(PathBuf);
 
 impl Dir {
     fn new(name: &str) -> Self {
-        let dir =
-            std::env::temp_dir().join(format!("coqui-link-shared-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cabuya-shared-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         Self(dir)

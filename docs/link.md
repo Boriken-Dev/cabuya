@@ -8,7 +8,7 @@ A link is one proven, sealed connection between two peers, carrying named stream
 | --- | --- | --- |
 | Transport | WebTransport or WebSocket: a channel a browser can open | `coqui-transport` channels; `coqui-transport-web` carries WebTransport and WebSocket |
 | Proof | shows who holds a key, and seals every message after that with keys from the proof | a method of `coqui-peer` |
-| Streams | this page | `coqui-link` |
+| Streams | this page | `cabuya` |
 | Capabilities | any protocol, each its own messages | each protocol's own library |
 
 A stream carries a protocol's messages unchanged. The link adds proof and streams, never a dialect.

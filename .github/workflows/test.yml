@@ -59,8 +59,8 @@ jobs:
       - run: cargo clippy --all-targets --no-default-features -- -D warnings
       - run: cargo test --all-features
         env:
-          COQUI_LINK_TEST_NOISE: ${{ github.workspace }}/peer-noise/bindings/js/coqui-peer-noise/src/index.mjs
-          COQUI_LINK_SOURCE_VECTORS: ${{ github.workspace }}/agentic-peer/vectors/mux.json
+          CABUYA_TEST_NOISE: ${{ github.workspace }}/peer-noise/bindings/js/coqui-peer-noise/src/index.mjs
+          CABUYA_SOURCE_VECTORS: ${{ github.workspace }}/agentic-peer/vectors/mux.json
       - run: cargo test --no-default-features
       - run: cargo doc --no-deps --all-features
         env:
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: bindings/dart/coqui_link
+        working-directory: bindings/dart/cabuya
     steps:
       - uses: actions/checkout@v4
         with:

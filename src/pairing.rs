@@ -240,7 +240,7 @@ pub fn join_as<C: Channel>(
 
 /// What a joiner sends first on a listener that also takes proofs, so that listener knows a pairing follows. It is neither
 /// 32 bytes (Noise's first message) nor JSON (WebCrypto's), so no proof begins with it.
-pub const MARKER: &[u8] = b"coqui-link/pairing/1";
+pub const MARKER: &[u8] = b"cabuya/pairing/1";
 
 /// Whether `first_message` is a joiner's [`MARKER`]: a pairing follows on that channel, not a proof.
 #[must_use]

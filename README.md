@@ -1,14 +1,14 @@
-# coqui-link
+# cabuya
 
-[![Version](https://img.shields.io/crates/v/coqui-link.svg)](https://crates.io/crates/coqui-link)
-[![Rust version](https://img.shields.io/crates/msrv/coqui-link.svg)](https://crates.io/crates/coqui-link)
-[![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](https://github.com/Boriken-Dev/coqui-link/blob/main/LICENSE)
-[![Docs](https://img.shields.io/docsrs/coqui-link)](https://docs.rs/coqui-link)
-[![CI](https://img.shields.io/github/actions/workflow/status/Boriken-Dev/coqui-link/test.yml)](https://github.com/Boriken-Dev/coqui-link/actions/workflows/test.yml)
+[![Version](https://img.shields.io/crates/v/cabuya.svg)](https://crates.io/crates/cabuya)
+[![Rust version](https://img.shields.io/crates/msrv/cabuya.svg)](https://crates.io/crates/cabuya)
+[![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](https://github.com/Boriken-Dev/cabuya/blob/main/LICENSE)
+[![Docs](https://img.shields.io/docsrs/cabuya)](https://docs.rs/cabuya)
+[![CI](https://img.shields.io/github/actions/workflow/status/Boriken-Dev/cabuya/test.yml)](https://github.com/Boriken-Dev/cabuya/actions/workflows/test.yml)
 
 **One proven connection between two peers, and any number of named streams over it.** Pair once, prove who holds a key, then
 run whatever protocols the application needs, each as a stream with its own flow control and its own grant. It adds no dialect:
-a stream carries the application's own messages. See the [documentation](https://boriken-dev.github.io/coqui-link/).
+a stream carries the application's own messages. See the [documentation](https://boriken-dev.github.io/cabuya/).
 
 > **Status: alpha.** `0.0.0-alpha.0` is a pre-release: the API may change in any release before 1.0.
 
@@ -25,7 +25,7 @@ a stream carries the application's own messages. See the [documentation](https:/
 ## Installation
 
 ```sh
-cargo add coqui-link --git https://github.com/Boriken-Dev/coqui-link
+cargo add cabuya --git https://github.com/Boriken-Dev/cabuya
 ```
 
 | Feature | Adds | Default |
@@ -42,7 +42,7 @@ Two ends of a channel, one stream opened and echoed:
 ```rust
 use std::time::Duration;
 
-use coqui_link::mux::{Limits, Mux, Side};
+use cabuya::mux::{Limits, Mux, Side};
 use coqui_transport::frame::LengthPrefix;
 use coqui_transport::{Channel, StreamChannelBuilder, memory};
 
@@ -93,7 +93,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
 cargo test --no-default-features
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
-(cd bindings/dart/coqui_link && dart analyze && dart test)
+(cd bindings/dart/cabuya && dart analyze && dart test)
 (cd bindings/js && npm test)
 ```
 
@@ -101,4 +101,4 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 
 ## License
 
-MPL-2.0; see [LICENSE](https://github.com/Boriken-Dev/coqui-link/blob/main/LICENSE).
+MPL-2.0; see [LICENSE](https://github.com/Boriken-Dev/cabuya/blob/main/LICENSE).
