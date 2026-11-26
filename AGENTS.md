@@ -1,4 +1,4 @@
-# `cabuya` — API header
+# `cabuya` â€” API header
 
 Header-file-style reference for the `cabuya` crate: every public item with its signature, contract and gotchas, so the crate can be used without reading its source. It ships inside the package and is self-contained. Development documentation lives with the source at <https://github.com/Boriken-Dev/cabuya>.
 
