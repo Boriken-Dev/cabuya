@@ -1,4 +1,4 @@
-//! A link of this crate on one end and a link of `coqui-agentic-peer` on the other, over an in-memory channel: both sides, both
+//! A link of this crate on one end and a link of `agentic-peer` on the other, over an in-memory channel: both sides, both
 //! proof methods, a stream opened each way, and a stream ended by a grant taken away and by an admission refusing.
 #![allow(clippy::std_instead_of_core, clippy::std_instead_of_alloc)]
 
@@ -210,7 +210,7 @@ macro_rules! stack {
 }
 
 stack!(link_side, cabuya);
-stack!(peer_side, coqui_agentic_peer);
+stack!(peer_side, agentic_peer);
 
 /// One run of a link: `dial` and `answer` are each a different library's side.
 fn run(
@@ -281,8 +281,8 @@ fn agentic_peer_dials_and_this_crate_answers_under_each_method() {
 #[test]
 fn endpoints_of_different_methods_do_not_prove_in_either_direction() {
     let _deadline = common::within(90);
+    use agentic_peer::auth as theirs;
     use cabuya::auth as ours;
-    use coqui_agentic_peer::auth as theirs;
 
     for (ours_noise, theirs_noise) in [(true, false), (false, true)] {
         let method = |noise| {

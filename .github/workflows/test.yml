@@ -51,7 +51,7 @@ jobs:
       # The library this one was extracted from: its vectors must be the same bytes.
       - uses: actions/checkout@v4
         with:
-          repository: Boriken-Dev/coqui-agentic-peer
+          repository: Boriken-Dev/agentic-peer
           ref: f45938e8cede85a2a2e00afedea1b4944f7c8a67
           path: agentic-peer
       - run: cargo fmt --all --check

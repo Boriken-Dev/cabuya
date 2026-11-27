@@ -41,8 +41,9 @@ clap = { version = "4", default-features = false, features = ["std", "derive", "
 
 [dev-dependencies]
 proptest = "1"
-# The interoperability test talks to the library this one was extracted from.
-coqui-agentic-peer = { git = "https://github.com/Boriken-Dev/coqui-agentic-peer", rev = "f45938e8cede85a2a2e00afedea1b4944f7c8a67" }
+# The interoperability test talks to the library this one was extracted from, at the revision that still carried the link code
+# (its package was then named coqui-agentic-peer, before the repository became agentic-peer).
+agentic-peer = { package = "coqui-agentic-peer", git = "https://github.com/Boriken-Dev/agentic-peer", rev = "f45938e8cede85a2a2e00afedea1b4944f7c8a67" }
 
 [package.metadata.docs.rs]
 all-features = true

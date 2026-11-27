@@ -108,7 +108,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 (cd bindings/js && npm test)
 ```
 
-`tests/interop.rs` and `tests/vectors.rs` run against `coqui-agentic-peer`, which speaks the same wire.
+`tests/interop.rs` and `tests/vectors.rs` run against `agentic-peer`, which speaks the same wire.
 
 ## License
 

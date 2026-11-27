@@ -1,4 +1,4 @@
-//! The frame vectors are the wire: this crate and `coqui-agentic-peer`, which speaks the same wire, decode every valid vector to a
+//! The frame vectors are the wire: this crate and `agentic-peer`, which speaks the same wire, decode every valid vector to a
 //! frame that encodes back to its bytes, and refuse every invalid one.
 #![allow(clippy::std_instead_of_core, clippy::std_instead_of_alloc)]
 
@@ -27,14 +27,13 @@ fn vectors(key: &str) -> Vec<(String, Vec<u8>)> {
 }
 
 #[test]
-fn every_valid_vector_round_trips_in_this_crate_and_in_coqui_agentic_peer() {
+fn every_valid_vector_round_trips_in_this_crate_and_in_agentic_peer() {
     let valid = vectors("frames");
     assert!(!valid.is_empty());
     for (name, bytes) in &valid {
         let ours = cabuya::mux::Frame::decode(bytes).unwrap_or_else(|| panic!("{name}"));
         assert_eq!(&ours.encode(), bytes, "{name}");
-        let theirs =
-            coqui_agentic_peer::mux::Frame::decode(bytes).unwrap_or_else(|| panic!("{name}"));
+        let theirs = agentic_peer::mux::Frame::decode(bytes).unwrap_or_else(|| panic!("{name}"));
         assert_eq!(&theirs.encode(), bytes, "{name}");
     }
 }
@@ -45,10 +44,7 @@ fn every_invalid_vector_is_refused_by_both() {
     assert!(!invalid.is_empty());
     for (name, bytes) in &invalid {
         assert!(cabuya::mux::Frame::decode(bytes).is_none(), "{name}");
-        assert!(
-            coqui_agentic_peer::mux::Frame::decode(bytes).is_none(),
-            "{name}"
-        );
+        assert!(agentic_peer::mux::Frame::decode(bytes).is_none(), "{name}");
     }
 }
 
