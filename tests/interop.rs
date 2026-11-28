@@ -10,7 +10,6 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 use std::time::Duration;
 
-use coqui_peer::PeerId;
 use coqui_transport::frame::LengthPrefix;
 use coqui_transport::{Channel, Failure, StreamChannel, StreamChannelBuilder, memory};
 
@@ -62,23 +61,23 @@ macro_rules! stack {
                 }
             }
 
-            pub fn id(party: &Party) -> PeerId {
-                party.identity.peer_id()
+            pub fn id(party: &Party) -> String {
+                party.identity.peer_id().to_string()
             }
 
             /// Proves the answerer, then opens streams to it and ends them one way and another.
             pub fn dial(
                 channel: &StreamChannel,
                 party: &Party,
-                server: PeerId,
+                server: String,
                 controls: &Controls,
             ) {
                 let proof = Proof::builder(party.identity.clone())
-                    .responders(Trust::pinned([server]))
+                    .responders(Trust::pinned([server.parse().unwrap()]))
                     .build()
                     .unwrap();
                 let done = prove_out(&proof, channel, Duration::from_secs(20), 1 << 16).unwrap();
-                assert_eq!(done.peer, server);
+                assert_eq!(done.peer.to_string(), server);
                 let sealed = Sealed::new(channel, done.session);
                 Mux::run(&sealed, Side::Dialed, Limits::default(), None, |mux| {
                     let echo = mux.open("echo/1").unwrap();
@@ -124,18 +123,18 @@ macro_rules! stack {
             pub fn answer(
                 channel: &StreamChannel,
                 party: &Party,
-                client: PeerId,
+                client: String,
                 blocked: Arc<AtomicBool>,
                 revoke_grant: Receiver<()>,
                 report: Report,
             ) {
                 let proof = Proof::builder(party.identity.clone())
-                    .initiators(Trust::pinned([client]))
+                    .initiators(Trust::pinned([client.parse().unwrap()]))
                     .build()
                     .unwrap();
                 let done = prove(&proof, channel, Duration::from_secs(20), 1 << 16).unwrap();
-                assert_eq!(done.peer, client);
-                let peer = client.to_string();
+                assert_eq!(done.peer.to_string(), client);
+                let peer = client.clone();
                 let sealed = Sealed::new(channel, done.session);
                 let store = MemoryPeers::default();
                 store
@@ -300,11 +299,19 @@ fn endpoints_of_different_methods_do_not_prove_in_either_direction() {
         })
         .unwrap();
         let dialing = ours::Proof::builder(dialer.clone())
-            .responders(ours::Trust::pinned([answerer.peer_id()]))
+            .responders(ours::Trust::pinned([answerer
+                .peer_id()
+                .to_string()
+                .parse()
+                .unwrap()]))
             .build()
             .unwrap();
         let answering = theirs::Proof::builder(answerer.clone())
-            .initiators(theirs::Trust::pinned([dialer.peer_id()]))
+            .initiators(theirs::Trust::pinned([dialer
+                .peer_id()
+                .to_string()
+                .parse()
+                .unwrap()]))
             .build()
             .unwrap();
         let (near, far) = channels();

@@ -26,11 +26,11 @@ cli = ["sealed", "forward", "dep:clap"]
 [dependencies]
 coqui-transport = { git = "https://github.com/Boriken-Dev/coqui-transport", rev = "2601da58de9cac8f635060e4746864e9b238c6c5", default-features = false }
 serde_json = "1"
-coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "984db3d54b73de10c7892b06fe269a259de2d1c5", optional = true }
+coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "be72492c89a5a657deb8027aee3c6db27ac14b2f", optional = true }
 coqui-builder = { git = "https://github.com/Boriken-Dev/coqui-builder", rev = "c1875f8276bd6366c38e9133fdb1181a0ffbaaad", optional = true }
-coqui-peer-webcrypto = { git = "https://github.com/Boriken-Dev/coqui-peer-webcrypto", rev = "7544cf9c026da808dc940bcb56a0b3d5d78bef2f", features = ["pin"], optional = true }
+coqui-peer-webcrypto = { git = "https://github.com/Boriken-Dev/coqui-peer-webcrypto", rev = "d5e8cc4792f7d6e69921822da59ee6e10324cb9a", features = ["pin"], optional = true }
 # The Noise method, with `pin` for PIN pairing inside its session.
-coqui-peer-noise = { git = "https://github.com/Boriken-Dev/coqui-peer-noise", rev = "518dd9f5693161d74af7b2ddb27ac0c4061b35b9", features = ["pin"], optional = true }
+coqui-peer-noise = { git = "https://github.com/Boriken-Dev/coqui-peer-noise", rev = "ed93715e900b68b040db6e8f8dcdf1a60a38b182", features = ["pin"], optional = true }
 # Ending a connection with a reset, which std cannot do.
 socket2 = { version = "0.6", optional = true }
 # Address networks and port ranges, for the targets a `tcp/1` grant may name by pattern.
@@ -44,6 +44,9 @@ proptest = "1"
 # The interoperability test talks to the library this one was extracted from, at the last revision that still carried the link code
 # (its package was then named coqui-agentic-peer, before the repository became agentic-peer). Later revisions of agentic-peer depend on
 # this crate for the link, so they cannot stand in: the test would run this crate against itself.
+# That revision names older coqui-peer, coqui-peer-noise and coqui-peer-webcrypto revisions of its own, so the dev-dependency graph holds a second
+# copy of each. That is expected: it never reaches a consumer, and the test passes peer IDs between the two sides as strings, never as one type.
+# `cargo tree -d -e normal,build` must show one coqui-peer and one coqui-peer-webcrypto.
 agentic-peer = { package = "coqui-agentic-peer", git = "https://github.com/Boriken-Dev/agentic-peer", rev = "f45938e8cede85a2a2e00afedea1b4944f7c8a67" }
 
 [package.metadata.docs.rs]
@@ -52,7 +55,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 # One PeerId type across the graph needs one source.
 [patch.crates-io]
-coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "984db3d54b73de10c7892b06fe269a259de2d1c5" }
+coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "be72492c89a5a657deb8027aee3c6db27ac14b2f" }
 
 [lints.rust]
 missing_docs = "warn"
