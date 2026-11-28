@@ -72,6 +72,7 @@ pub struct Options { pub limits: Limits, pub recheck: Duration }  // non_exhaust
 pub type Admission = Box<dyn Fn(&PeerRecord, &[u8]) -> Result<(), &'static str> + Send + Sync>;   // asked at open and while running
 Services::with_admission(self, protocol: &str, handler: Handler, admission: Admission) -> Self
 pub fn serve_with<'c, C: Channel>(channel: &'c C, side: Side, options: Options, first: Option<Vec<u8>>, peer: &str, host: &Host<'_>, opener: impl FnOnce(&Mux<'c, C>) + Send)
+pub fn serve_with_terminal<'c, C: Channel>(channel: &'c C, side: Side, options: Options, first: Option<Vec<u8>>, peer: &str, host: &Host<'_>, opener: impl FnOnce(&Mux<'c, C>) + Send, terminal: impl FnOnce())   // serve_with, and terminal() once when the mux is terminal, before the wait for running handlers
 pub struct Host<'a> { pub store: &'a dyn PeerStore, pub services: &'a Services, pub events: &'a dyn Events }
 pub fn serve<C: Channel>(channel: &C, side: Side, options: Options, first: Option<Vec<u8>>, peer: &str, host: &Host<'_>)
 pub struct Capabilities { pub instance: String, pub offers: Vec<String>, pub window: Option<u32>, pub max_frame: Option<usize> }  // non_exhaustive; window and max_frame are the other side's `Limits`, None from an older peer: a host reports a difference in `window`
